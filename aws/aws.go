@@ -160,12 +160,26 @@ func init() {
 	}
 }
 
+// getConfig returns the value of the first available environment
+// variable, among the given ones.
+func getConfig(envVars ...string) (value string) {
+	value = ""
+	for _, v := range envVars {
+		value = os.Getenv(v)
+		if value != "" {
+			break
+		}
+	}
+	return
+}
+
 // EnvAuth creates an Auth based on environment information.
 // The AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY environment
-// variables are used.
+// variables are used as the first preference, but EC2_ACCESS_KEY
+// and EC2_SECRET_KEY environment variables are also supported.
 func EnvAuth() (auth Auth, err error) {
-	auth.AccessKey = os.Getenv("AWS_ACCESS_KEY_ID")
-	auth.SecretKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
+	auth.AccessKey = getConfig("AWS_ACCESS_KEY_ID", "EC2_ACCESS_KEY")
+	auth.SecretKey = getConfig("AWS_SECRET_ACCESS_KEY", "EC2_SECRET_KEY")
 	if auth.AccessKey == "" {
 		err = errors.New("AWS_ACCESS_KEY_ID not found in environment")
 	}
