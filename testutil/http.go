@@ -69,6 +69,7 @@ func (s *HTTPServer) Stop() {
 	if err != nil {
 		panic(err)
 	}
+	s.listener = nil
 }
 
 // Flush discards all pending requests and responses.
