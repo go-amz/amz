@@ -27,6 +27,10 @@ func (s *S) SetUpSuite(c *C) {
 	s.iam = iam.New(auth, aws.Region{IAMEndpoint: testServer.URL})
 }
 
+func (s *S) TearDownSuite(c *C) {
+	testServer.Stop()
+}
+
 func (s *S) TearDownTest(c *C) {
 	testServer.Flush()
 }
