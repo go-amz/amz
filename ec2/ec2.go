@@ -209,6 +209,7 @@ type RunInstances struct {
 	DisableAPITermination bool
 	ShutdownBehavior      string
 	PrivateIPAddress      string
+	BlockDeviceMappings   []BlockDeviceMapping
 }
 
 // Response to a RunInstances request.
@@ -273,6 +274,30 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		} else {
 			params["SecurityGroup."+strconv.Itoa(j)] = g.Name
 			j++
+		}
+	}
+	for i, b := range options.BlockDeviceMappings {
+		n := strconv.Itoa(i + 1)
+		if b.DeviceName != "" {
+			params["BlockDeviceMapping."+n+".DeviceName"] = b.DeviceName
+		}
+		if b.VirtualName != "" {
+			params["BlockDeviceMapping."+n+".VirtualName"] = b.VirtualName
+		}
+		if b.SnapshotId != "" {
+			params["BlockDeviceMapping."+n+".Ebs.SnapshotId"] = b.SnapshotId
+		}
+		if b.VolumeType != "" {
+			params["BlockDeviceMapping."+n+".Ebs.VolumeType"] = b.VolumeType
+		}
+		if b.VolumeSize > 0 {
+			params["BlockDeviceMapping."+n+".Ebs.VolumeSize"] = strconv.FormatInt(b.VolumeSize, 10)
+		}
+		if b.IOPS > 0 {
+			params["BlockDeviceMapping."+n+".Ebs.Iops"] = strconv.FormatInt(b.IOPS, 10)
+		}
+		if b.DeleteOnTermination {
+			params["BlockDeviceMapping."+n+".Ebs.DeleteOnTermination"] = "true"
 		}
 	}
 	token, err := clientToken()
@@ -429,7 +454,7 @@ type BlockDeviceMapping struct {
 	VirtualName         string `xml:"virtualName"`
 	SnapshotId          string `xml:"ebs>snapshotId"`
 	VolumeType          string `xml:"ebs>volumeType"`
-	VolumeSize          int64  `xml:"ebs>volumeSize"`
+	VolumeSize          int64  `xml:"ebs>volumeSize"` // Size is given in GB
 	DeleteOnTermination bool   `xml:"ebs>deleteOnTermination"`
 
 	// The number of I/O operations per second (IOPS) that the volume supports.

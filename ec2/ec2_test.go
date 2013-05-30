@@ -96,6 +96,15 @@ func (s *S) TestRunInstancesExample(c *C) {
 		DisableAPITermination: true,
 		ShutdownBehavior:      "terminate",
 		PrivateIPAddress:      "10.0.0.25",
+		BlockDeviceMappings:   []ec2.BlockDeviceMapping{{
+			DeviceName: "device-name",
+			VirtualName: "virtual-name",
+			SnapshotId: "snapshot-id",
+			VolumeType: "volume-type",
+			VolumeSize: 10,
+			DeleteOnTermination: true,
+			IOPS: 1000,
+		}},
 	}
 	resp, err := s.ec2.RunInstances(&options)
 
@@ -120,6 +129,13 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(req.Form["DisableApiTermination"], DeepEquals, []string{"true"})
 	c.Assert(req.Form["InstanceInitiatedShutdownBehavior"], DeepEquals, []string{"terminate"})
 	c.Assert(req.Form["PrivateIpAddress"], DeepEquals, []string{"10.0.0.25"})
+	c.Assert(req.Form["BlockDeviceMapping.1.DeviceName"], DeepEquals, []string{"device-name"})
+	c.Assert(req.Form["BlockDeviceMapping.1.VirtualName"], DeepEquals, []string{"virtual-name"})
+	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.SnapshotId"], DeepEquals, []string{"snapshot-id"})
+	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.VolumeType"], DeepEquals, []string{"volume-type"})
+	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.VolumeSize"], DeepEquals, []string{"10"})
+	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.Iops"], DeepEquals, []string{"1000"})
+	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.DeleteOnTermination"], DeepEquals, []string{"true"})
 
 	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
