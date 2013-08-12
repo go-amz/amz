@@ -68,7 +68,7 @@ func (s *LocalServerSuite) TestUserData(c *C) {
 	})
 	c.Assert(err, IsNil)
 	c.Assert(inst, NotNil)
-	c.Assert(inst.Instances[0].DNSName, Equals, inst.Instances[0].InstanceId+".example.com")
+	c.Assert(inst.Instances[0].DNSName, Equals, inst.Instances[0].InstanceId+".testing.invalid")
 
 	id := inst.Instances[0].InstanceId
 
