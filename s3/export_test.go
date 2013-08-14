@@ -4,13 +4,13 @@ import (
 	"launchpad.net/goamz/aws"
 )
 
-var originalStrategy = attempts
+var originalStrategy = eventualConsistency
 
 func SetAttemptStrategy(s *aws.AttemptStrategy) {
 	if s == nil {
-		attempts = originalStrategy
+		eventualConsistency = originalStrategy
 	} else {
-		attempts = *s
+		eventualConsistency = *s
 	}
 }
 

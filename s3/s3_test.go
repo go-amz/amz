@@ -33,6 +33,7 @@ func (s *S) SetUpSuite(c *C) {
 
 func (s *S) TearDownSuite(c *C) {
 	s3.SetAttemptStrategy(nil)
+	s3.Retry = true
 	testServer.Stop()
 }
 
@@ -42,6 +43,7 @@ func (s *S) SetUpTest(c *C) {
 		Delay: 100 * time.Millisecond,
 	}
 	s3.SetAttemptStrategy(&attempts)
+	s3.Retry = true
 }
 
 func (s *S) TearDownTest(c *C) {
@@ -49,7 +51,7 @@ func (s *S) TearDownTest(c *C) {
 }
 
 func (s *S) DisableRetries() {
-	s3.SetAttemptStrategy(&aws.AttemptStrategy{})
+	s3.Retry = false
 }
 
 // PutBucket docs: http://goo.gl/kBTCu
