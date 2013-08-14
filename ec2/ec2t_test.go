@@ -2,13 +2,15 @@ package ec2_test
 
 import (
 	"fmt"
+	"net"
+	"regexp"
+	"sort"
+
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/ec2/ec2test"
 	"launchpad.net/goamz/testutil"
 	. "launchpad.net/gocheck"
-	"regexp"
-	"sort"
 )
 
 // LocalServer represents a local ec2test fake server.
@@ -77,6 +79,24 @@ func (s *LocalServerSuite) TestUserData(c *C) {
 	tinst := s.srv.srv.Instance(id)
 	c.Assert(tinst, NotNil)
 	c.Assert(tinst.UserData, DeepEquals, data)
+}
+
+func (s *LocalServerSuite) TestInstanceInfo(c *C) {
+	list, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+	})
+
+	inst := list.Instances[0]
+	c.Assert(err, IsNil)
+	c.Assert(inst, NotNil)
+
+	mask := net.CIDRMask(24, 32)
+	c.Check(net.ParseIP(inst.IPAddress).Mask(mask).String(), Equals, "1.2.3.0")
+	c.Check(net.ParseIP(inst.PrivateIPAddress).Mask(mask).String(), Equals, "127.0.0.0")
+	c.Check(inst.DNSName, Equals, fmt.Sprintf("%s.testing.invalid", inst.InstanceId))
+	c.Check(inst.PrivateDNSName, Equals, fmt.Sprintf("%s.internal.invalid", inst.InstanceId))
+
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
