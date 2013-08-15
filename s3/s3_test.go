@@ -33,7 +33,6 @@ func (s *S) SetUpSuite(c *C) {
 
 func (s *S) TearDownSuite(c *C) {
 	s3.SetAttemptStrategy(nil)
-	s3.Retry = true
 	testServer.Stop()
 }
 
@@ -43,15 +42,10 @@ func (s *S) SetUpTest(c *C) {
 		Delay: 100 * time.Millisecond,
 	}
 	s3.SetAttemptStrategy(&attempts)
-	s3.Retry = true
 }
 
 func (s *S) TearDownTest(c *C) {
 	testServer.Flush()
-}
-
-func (s *S) DisableRetries() {
-	s3.Retry = false
 }
 
 // PutBucket docs: http://goo.gl/kBTCu
@@ -277,4 +271,13 @@ func (s *S) TestListWithDelimiter(c *C) {
 	c.Assert(data.IsTruncated, Equals, false)
 	c.Assert(len(data.Contents), Equals, 0)
 	c.Assert(data.CommonPrefixes, DeepEquals, []string{"photos/2006/feb/", "photos/2006/jan/"})
+}
+
+func (s *S) TestRetryAttempts(c *C) {
+	s3.SetAttemptStrategy(nil)
+	orig := s3.AttemptStrategy()
+	s3.RetryAttempts(false)
+	c.Assert(s3.AttemptStrategy(), Equals, aws.AttemptStrategy{})
+	s3.RetryAttempts(true)
+	c.Assert(s3.AttemptStrategy(), Equals, orig)
 }

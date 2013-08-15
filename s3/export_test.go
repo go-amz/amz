@@ -4,14 +4,18 @@ import (
 	"launchpad.net/goamz/aws"
 )
 
-var originalStrategy = eventualConsistency
+var originalStrategy = attempts
 
 func SetAttemptStrategy(s *aws.AttemptStrategy) {
 	if s == nil {
-		eventualConsistency = originalStrategy
+		attempts = originalStrategy
 	} else {
-		eventualConsistency = *s
+		attempts = *s
 	}
+}
+
+func AttemptStrategy() aws.AttemptStrategy {
+	return attempts
 }
 
 func Sign(auth aws.Auth, method, path string, params, headers map[string][]string) {

@@ -48,22 +48,24 @@ type Owner struct {
 	DisplayName string
 }
 
-// Retry holds whether failing attempts may be retried to cope with
-// eventual consistency. It is intended for testing purposes only, and
-// should not be set while any operations are in progress.
-var Retry = true
-
-var eventualConsistency = aws.AttemptStrategy{
-	Min:   5,
-	Total: 5 * time.Second,
-	Delay: 200 * time.Millisecond,
-}
-
-func attempts() aws.AttemptStrategy {
-	if Retry {
-		return eventualConsistency
+var (
+	attempts        = defaultAttempts
+	defaultAttempts = aws.AttemptStrategy{
+		Min:   5,
+		Total: 5 * time.Second,
+		Delay: 200 * time.Millisecond,
 	}
-	return aws.AttemptStrategy{}
+)
+
+// RetryAttempts sets whether failing S3 requests may be
+// retried to cope with eventual consistency. It should
+// not be called while any operations are in progress.
+func RetryAttempts(retry bool) {
+	if retry {
+		attempts = defaultAttempts
+	} else {
+		attempts = aws.AttemptStrategy{}
+	}
 }
 
 // New creates a new S3.
@@ -133,7 +135,7 @@ func (b *Bucket) DelBucket() (err error) {
 		bucket: b.Name,
 		path:   "/",
 	}
-	for attempt := attempts().Start(); attempt.Next(); {
+	for attempt := attempts.Start(); attempt.Next(); {
 		err = b.S3.query(req, nil)
 		if !shouldRetry(err) {
 			break
@@ -167,7 +169,7 @@ func (b *Bucket) GetReader(path string) (rc io.ReadCloser, err error) {
 	if err != nil {
 		return nil, err
 	}
-	for attempt := attempts().Start(); attempt.Next(); {
+	for attempt := attempts.Start(); attempt.Next(); {
 		hresp, err := b.S3.run(req)
 		if shouldRetry(err) && attempt.HasNext() {
 			continue
@@ -316,7 +318,7 @@ func (b *Bucket) List(prefix, delim, marker string, max int) (result *ListResp, 
 		params: params,
 	}
 	result = &ListResp{}
-	for attempt := attempts().Start(); attempt.Next(); {
+	for attempt := attempts.Start(); attempt.Next(); {
 		err = b.S3.query(req, result)
 		if !shouldRetry(err) {
 			break
