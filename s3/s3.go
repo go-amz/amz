@@ -57,9 +57,9 @@ var (
 	}
 )
 
-// RetryAttempts sets whether failing S3 requests may be
-// retried to cope with eventual consistency. It should
-// not be called while any operations are in progress.
+// RetryAttempts sets whether failing S3 requests may be retried to cope
+// with eventual consistency or temporary failures. It should not be
+// called while operations are in progress.
 func RetryAttempts(retry bool) {
 	if retry {
 		attempts = defaultAttempts
