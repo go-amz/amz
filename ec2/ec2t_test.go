@@ -70,7 +70,6 @@ func (s *LocalServerSuite) TestUserData(c *C) {
 	})
 	c.Assert(err, IsNil)
 	c.Assert(inst, NotNil)
-	c.Assert(inst.Instances[0].DNSName, Equals, inst.Instances[0].InstanceId+".testing.invalid")
 
 	id := inst.Instances[0].InstanceId
 
@@ -86,16 +85,21 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 		ImageId:      imageId,
 		InstanceType: "t1.micro",
 	})
+	c.Assert(err, IsNil)
 
 	inst := list.Instances[0]
-	c.Assert(err, IsNil)
 	c.Assert(inst, NotNil)
 
-	mask := net.CIDRMask(24, 32)
-	c.Check(net.ParseIP(inst.IPAddress).Mask(mask).String(), Equals, "1.2.3.0")
-	c.Check(net.ParseIP(inst.PrivateIPAddress).Mask(mask).String(), Equals, "127.0.0.0")
-	c.Check(inst.DNSName, Equals, fmt.Sprintf("%s.testing.invalid", inst.InstanceId))
-	c.Check(inst.PrivateDNSName, Equals, fmt.Sprintf("%s.internal.invalid", inst.InstanceId))
+	id := inst.InstanceId
+	defer s.ec2.TerminateInstances([]string{id})
+
+	masked := func(addr string) string {
+		return net.ParseIP(addr).Mask(net.CIDRMask(24, 32)).String()
+	}
+	c.Check(masked(inst.IPAddress), Equals, "8.0.0.0")
+	c.Check(masked(inst.PrivateIPAddress), Equals, "127.0.0.0")
+	c.Check(inst.DNSName, Equals, id+".testing.invalid")
+	c.Check(inst.PrivateDNSName, Equals, id+".internal.invalid")
 
 }
 

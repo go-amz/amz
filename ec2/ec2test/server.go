@@ -544,17 +544,17 @@ func (inst *Instance) terminate() (d ec2.InstanceStateChange) {
 }
 
 func (inst *Instance) ec2instance() ec2.Instance {
-        var id int
-        fmt.Sscanf(inst.id, "i-%d", &id)
+	// TODO(gz) Make a neater way of getting the counter back out than this
+	var id int
+	fmt.Sscanf(inst.id, "i-%d", &id)
 	return ec2.Instance{
-		InstanceId:   inst.id,
-		InstanceType: inst.instType,
-		ImageId:      inst.imageId,
-		DNSName:      fmt.Sprintf("%s.testing.invalid", inst.id),
-		PrivateDNSName: fmt.Sprintf("%s.internal.invalid", inst.id),
-		IPAddress:    fmt.Sprintf("1.2.3.%d", id%255),
-		PrivateIPAddress:  fmt.Sprintf("127.0.0.%d", id %255),
-	
+		InstanceId:       inst.id,
+		InstanceType:     inst.instType,
+		ImageId:          inst.imageId,
+		DNSName:          fmt.Sprintf("%s.testing.invalid", inst.id),
+		PrivateDNSName:   fmt.Sprintf("%s.internal.invalid", inst.id),
+		IPAddress:        fmt.Sprintf("8.0.0.%d", id%256),
+		PrivateIPAddress: fmt.Sprintf("127.0.0.%d", id%256),
 		// TODO the rest
 	}
 }
