@@ -29,7 +29,7 @@ func (s *S) TestInitMulti(c *C) {
 
 func (s *S) TestMultiNoPreviousUpload(c *C) {
 	// Don't retry the NoSuchUpload error.
-	s.DisableRetries()
+	s3.RetryAttempts(false)
 
 	testServer.Response(404, nil, NoSuchUploadErrorDump)
 	testServer.Response(200, nil, InitMultiResultDump)
@@ -147,7 +147,7 @@ func readAll(r io.Reader) string {
 
 func (s *S) TestPutAllNoPreviousUpload(c *C) {
 	// Don't retry the NoSuchUpload error.
-	s.DisableRetries()
+	s3.RetryAttempts(false)
 
 	etag1 := map[string]string{"ETag": `"etag1"`}
 	etag2 := map[string]string{"ETag": `"etag2"`}
@@ -205,7 +205,7 @@ func (s *S) TestPutAllNoPreviousUpload(c *C) {
 
 func (s *S) TestPutAllZeroSizeFile(c *C) {
 	// Don't retry the NoSuchUpload error.
-	s.DisableRetries()
+	s3.RetryAttempts(false)
 
 	etag1 := map[string]string{"ETag": `"etag1"`}
 	testServer.Response(200, nil, InitMultiResultDump)

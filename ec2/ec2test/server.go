@@ -555,6 +555,7 @@ func (inst *Instance) ec2instance() ec2.Instance {
 		PrivateDNSName:   fmt.Sprintf("%s.internal.invalid", inst.id),
 		IPAddress:        fmt.Sprintf("8.0.0.%d", id%256),
 		PrivateIPAddress: fmt.Sprintf("127.0.0.%d", id%256),
+		State:            inst.state,
 		// TODO the rest
 	}
 }
