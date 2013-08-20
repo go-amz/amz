@@ -2,13 +2,15 @@ package ec2_test
 
 import (
 	"fmt"
+	"net"
+	"regexp"
+	"sort"
+
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/ec2/ec2test"
 	"launchpad.net/goamz/testutil"
 	. "launchpad.net/gocheck"
-	"regexp"
-	"sort"
 )
 
 // LocalServer represents a local ec2test fake server.
@@ -68,7 +70,6 @@ func (s *LocalServerSuite) TestUserData(c *C) {
 	})
 	c.Assert(err, IsNil)
 	c.Assert(inst, NotNil)
-	c.Assert(inst.Instances[0].DNSName, Equals, inst.Instances[0].InstanceId+".example.com")
 
 	id := inst.Instances[0].InstanceId
 
@@ -77,6 +78,29 @@ func (s *LocalServerSuite) TestUserData(c *C) {
 	tinst := s.srv.srv.Instance(id)
 	c.Assert(tinst, NotNil)
 	c.Assert(tinst.UserData, DeepEquals, data)
+}
+
+func (s *LocalServerSuite) TestInstanceInfo(c *C) {
+	list, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+	})
+	c.Assert(err, IsNil)
+
+	inst := list.Instances[0]
+	c.Assert(inst, NotNil)
+
+	id := inst.InstanceId
+	defer s.ec2.TerminateInstances([]string{id})
+
+	masked := func(addr string) string {
+		return net.ParseIP(addr).Mask(net.CIDRMask(24, 32)).String()
+	}
+	c.Check(masked(inst.IPAddress), Equals, "8.0.0.0")
+	c.Check(masked(inst.PrivateIPAddress), Equals, "127.0.0.0")
+	c.Check(inst.DNSName, Equals, id+".testing.invalid")
+	c.Check(inst.PrivateDNSName, Equals, id+".internal.invalid")
+
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.

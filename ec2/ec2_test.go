@@ -218,6 +218,8 @@ func (s *S) TestDescribeInstancesExample1(c *C) {
 	c.Assert(r0i.InstanceId, Equals, "i-c5cd56af")
 	c.Assert(r0i.PrivateDNSName, Equals, "domU-12-31-39-10-56-34.compute-1.internal")
 	c.Assert(r0i.DNSName, Equals, "ec2-174-129-165-232.compute-1.amazonaws.com")
+	c.Assert(r0i.PrivateIPAddress, Equals, "10.198.85.190")
+	c.Assert(r0i.IPAddress, Equals, "174.129.165.232")
 	c.Assert(r0i.AvailZone, Equals, "us-east-1b")
 }
 
