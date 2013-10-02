@@ -664,22 +664,24 @@ func (srv *Server) describeInstances(w http.ResponseWriter, req *http.Request, r
 	resp.RequestId = reqId
 	for _, r := range srv.reservations {
 		var instances []ec2.Instance
+		var groups []ec2.SecurityGroup
+		for _, g := range r.groups {
+			groups = append(groups, g.ec2SecurityGroup())
+		}
 		for _, inst := range r.instances {
 			if len(insts) > 0 && !insts[inst] {
 				continue
 			}
 			ok, err := f.ok(inst)
 			if ok {
-				instances = append(instances, inst.ec2instance())
+				instance := inst.ec2instance()
+				instance.SecurityGroups = groups
+				instances = append(instances, instance)
 			} else if err != nil {
 				fatalf(400, "InvalidParameterValue", "describe instances: %v", err)
 			}
 		}
 		if len(instances) > 0 {
-			var groups []ec2.SecurityGroup
-			for _, g := range r.groups {
-				groups = append(groups, g.ec2SecurityGroup())
-			}
 			resp.Reservations = append(resp.Reservations, ec2.Reservation{
 				ReservationId:  r.id,
 				OwnerId:        ownerId,

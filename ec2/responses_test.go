@@ -177,6 +177,12 @@ var DescribeInstancesExample1 = `
           <clientToken/>
           <tagSet/>
           <hypervisor>xen</hypervisor>
+          <groupSet>
+            <item>
+              <groupId>sg-67ad940e</groupId>
+              <groupName>default</groupName>
+            </item>
+          </groupSet>
        </item>
       </instancesSet>
       <requesterId>854251627541</requesterId>
