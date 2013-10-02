@@ -569,14 +569,14 @@ func (inst *Instance) matchAttr(attr, value string) (ok bool, err error) {
 		return value == "i386", nil
 	case "instance-id":
 		return inst.id() == value, nil
-	case "group-id":
+	case "instance.group-id", "group-id":
 		for _, g := range inst.reservation.groups {
 			if g.id == value {
 				return true, nil
 			}
 		}
 		return false, nil
-	case "group-name":
+	case "instance.group-name", "group-name":
 		for _, g := range inst.reservation.groups {
 			if g.name == value {
 				return true, nil

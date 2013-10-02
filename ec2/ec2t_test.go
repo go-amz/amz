@@ -385,9 +385,21 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 			},
 			resultIds: ids(0, 1),
 		}, {
+			about: "check that filtering on group id with instance prefix works",
+			filters: []filterSpec{
+				{"instance.group-id", []string{group1.Id}},
+			},
+			resultIds: ids(0, 1),
+		}, {
 			about: "check that filtering on group name works",
 			filters: []filterSpec{
 				{"group-name", []string{group1.Name}},
+			},
+			resultIds: ids(0, 1),
+		}, {
+			about: "check that filtering on group name with instance prefix works",
+			filters: []filterSpec{
+				{"instance.group-name", []string{group1.Name}},
 			},
 			resultIds: ids(0, 1),
 		}, {
