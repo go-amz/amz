@@ -207,11 +207,12 @@ func (s *S) TestDescribeInstancesExample1(c *C) {
 	c.Assert(resp.RequestId, Equals, "98e3c9a4-848c-4d6d-8e8a-b1bdEXAMPLE")
 	c.Assert(resp.Reservations, HasLen, 2)
 
+	expectedGroups := []ec2.SecurityGroup{{Name: "default", Id: "sg-67ad940e"}}
 	r0 := resp.Reservations[0]
 	c.Assert(r0.ReservationId, Equals, "r-b27e30d9")
 	c.Assert(r0.OwnerId, Equals, "999988887777")
 	c.Assert(r0.RequesterId, Equals, "854251627541")
-	c.Assert(r0.SecurityGroups, DeepEquals, []ec2.SecurityGroup{{Name: "default", Id: "sg-67ad940e"}})
+	c.Assert(r0.SecurityGroups, DeepEquals, expectedGroups)
 	c.Assert(r0.Instances, HasLen, 1)
 
 	r0i := r0.Instances[0]
@@ -221,6 +222,7 @@ func (s *S) TestDescribeInstancesExample1(c *C) {
 	c.Assert(r0i.PrivateIPAddress, Equals, "10.198.85.190")
 	c.Assert(r0i.IPAddress, Equals, "174.129.165.232")
 	c.Assert(r0i.AvailZone, Equals, "us-east-1b")
+	c.Assert(r0i.SecurityGroups, DeepEquals, expectedGroups)
 }
 
 func (s *S) TestDescribeInstancesExample2(c *C) {
