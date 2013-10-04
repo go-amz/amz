@@ -66,10 +66,10 @@ type reservation struct {
 
 // instance holds a simulated ec2 instance
 type Instance struct {
+	seq         int
 	// UserData holds the data that was passed to the RunInstances request
 	// when the instance was started.
 	UserData    []byte
-	id          string
 	imageId     string
 	reservation *reservation
 	instType    string
@@ -484,21 +484,22 @@ func (srv *Server) NewInstances(n int, instType string, imageId string, state ec
 	ids := make([]string, n)
 	for i := 0; i < n; i++ {
 		inst := srv.newInstance(r, instType, imageId, state)
-		ids[i] = inst.id
+		ids[i] = inst.id()
 	}
 	return ids
 }
 
 func (srv *Server) newInstance(r *reservation, instType string, imageId string, state ec2.InstanceState) *Instance {
 	inst := &Instance{
-		id:          fmt.Sprintf("i-%d", srv.maxId.next()),
+		seq:         srv.maxId.next(),
 		instType:    instType,
 		imageId:     imageId,
 		state:       state,
 		reservation: r,
 	}
-	srv.instances[inst.id] = inst
-	r.instances[inst.id] = inst
+	id := inst.id()
+	srv.instances[id] = inst
+	r.instances[id] = inst
 	return inst
 }
 
@@ -535,20 +536,29 @@ func (srv *Server) terminateInstances(w http.ResponseWriter, req *http.Request, 
 	return &resp
 }
 
+func (inst *Instance) id() string {
+	return fmt.Sprintf("i-%d", inst.seq)
+}
+
 func (inst *Instance) terminate() (d ec2.InstanceStateChange) {
 	d.PreviousState = inst.state
 	inst.state = ShuttingDown
 	d.CurrentState = inst.state
-	d.InstanceId = inst.id
+	d.InstanceId = inst.id()
 	return d
 }
 
 func (inst *Instance) ec2instance() ec2.Instance {
+	id := inst.id()
 	return ec2.Instance{
-		InstanceId:   inst.id,
-		InstanceType: inst.instType,
-		ImageId:      inst.imageId,
-		DNSName:      fmt.Sprintf("%s.example.com", inst.id),
+		InstanceId:       id,
+		InstanceType:     inst.instType,
+		ImageId:          inst.imageId,
+		DNSName:          fmt.Sprintf("%s.testing.invalid", id),
+		PrivateDNSName:   fmt.Sprintf("%s.internal.invalid", id),
+		IPAddress:        fmt.Sprintf("8.0.0.%d", inst.seq%256),
+		PrivateIPAddress: fmt.Sprintf("127.0.0.%d", inst.seq%256),
+		State:            inst.state,
 		// TODO the rest
 	}
 }
@@ -558,15 +568,15 @@ func (inst *Instance) matchAttr(attr, value string) (ok bool, err error) {
 	case "architecture":
 		return value == "i386", nil
 	case "instance-id":
-		return inst.id == value, nil
-	case "group-id":
+		return inst.id() == value, nil
+	case "instance.group-id", "group-id":
 		for _, g := range inst.reservation.groups {
 			if g.id == value {
 				return true, nil
 			}
 		}
 		return false, nil
-	case "group-name":
+	case "instance.group-name", "group-name":
 		for _, g := range inst.reservation.groups {
 			if g.name == value {
 				return true, nil
@@ -654,22 +664,24 @@ func (srv *Server) describeInstances(w http.ResponseWriter, req *http.Request, r
 	resp.RequestId = reqId
 	for _, r := range srv.reservations {
 		var instances []ec2.Instance
+		var groups []ec2.SecurityGroup
+		for _, g := range r.groups {
+			groups = append(groups, g.ec2SecurityGroup())
+		}
 		for _, inst := range r.instances {
 			if len(insts) > 0 && !insts[inst] {
 				continue
 			}
 			ok, err := f.ok(inst)
 			if ok {
-				instances = append(instances, inst.ec2instance())
+				instance := inst.ec2instance()
+				instance.SecurityGroups = groups
+				instances = append(instances, instance)
 			} else if err != nil {
 				fatalf(400, "InvalidParameterValue", "describe instances: %v", err)
 			}
 		}
 		if len(instances) > 0 {
-			var groups []ec2.SecurityGroup
-			for _, g := range r.groups {
-				groups = append(groups, g.ec2SecurityGroup())
-			}
 			resp.Reservations = append(resp.Reservations, ec2.Reservation{
 				ReservationId:  r.id,
 				OwnerId:        ownerId,

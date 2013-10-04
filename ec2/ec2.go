@@ -227,20 +227,23 @@ type RunInstancesResp struct {
 //
 // See http://goo.gl/OCH8a for more details.
 type Instance struct {
-	InstanceId         string        `xml:"instanceId"`
-	InstanceType       string        `xml:"instanceType"`
-	ImageId            string        `xml:"imageId"`
-	PrivateDNSName     string        `xml:"privateDnsName"`
-	DNSName            string        `xml:"dnsName"`
-	KeyName            string        `xml:"keyName"`
-	AMILaunchIndex     int           `xml:"amiLaunchIndex"`
-	Hypervisor         string        `xml:"hypervisor"`
-	VirtType           string        `xml:"virtualizationType"`
-	Monitoring         string        `xml:"monitoring>state"`
-	AvailZone          string        `xml:"placement>availabilityZone"`
-	PlacementGroupName string        `xml:"placement>groupName"`
-	State              InstanceState `xml:"instanceState"`
-	Tags               []Tag         `xml:"tagSet>item"`
+	InstanceId         string          `xml:"instanceId"`
+	InstanceType       string          `xml:"instanceType"`
+	ImageId            string          `xml:"imageId"`
+	PrivateDNSName     string          `xml:"privateDnsName"`
+	DNSName            string          `xml:"dnsName"`
+	IPAddress          string          `xml:"ipAddress"`
+	PrivateIPAddress   string          `xml:"privateIpAddress"`
+	KeyName            string          `xml:"keyName"`
+	AMILaunchIndex     int             `xml:"amiLaunchIndex"`
+	Hypervisor         string          `xml:"hypervisor"`
+	VirtType           string          `xml:"virtualizationType"`
+	Monitoring         string          `xml:"monitoring>state"`
+	AvailZone          string          `xml:"placement>availabilityZone"`
+	PlacementGroupName string          `xml:"placement>groupName"`
+	State              InstanceState   `xml:"instanceState"`
+	Tags               []Tag           `xml:"tagSet>item"`
+	SecurityGroups     []SecurityGroup `xml:"groupSet>item"`
 }
 
 // RunInstances starts new instances in EC2.

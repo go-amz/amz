@@ -48,10 +48,24 @@ type Owner struct {
 	DisplayName string
 }
 
-var attempts = aws.AttemptStrategy{
-	Min:   5,
-	Total: 5 * time.Second,
-	Delay: 200 * time.Millisecond,
+var (
+	attempts        = defaultAttempts
+	defaultAttempts = aws.AttemptStrategy{
+		Min:   5,
+		Total: 5 * time.Second,
+		Delay: 200 * time.Millisecond,
+	}
+)
+
+// RetryAttempts sets whether failing S3 requests may be retried to cope
+// with eventual consistency or temporary failures. It should not be
+// called while operations are in progress.
+func RetryAttempts(retry bool) {
+	if retry {
+		attempts = defaultAttempts
+	} else {
+		attempts = aws.AttemptStrategy{}
+	}
 }
 
 // New creates a new S3.
