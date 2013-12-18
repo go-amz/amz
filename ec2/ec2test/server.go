@@ -66,7 +66,8 @@ type reservation struct {
 
 // instance holds a simulated ec2 instance
 type Instance struct {
-	seq         int
+	seq        int
+	dnsNameSet bool
 	// UserData holds the data that was passed to the RunInstances request
 	// when the instance was started.
 	UserData    []byte
@@ -550,11 +551,19 @@ func (inst *Instance) terminate() (d ec2.InstanceStateChange) {
 
 func (inst *Instance) ec2instance() ec2.Instance {
 	id := inst.id()
+	// The first time the instance is returned, its DNSName
+	// will be empty. The client should then refresh the instance.
+	var dnsName string
+	if inst.dnsNameSet {
+		dnsName = fmt.Sprintf("%s.testing.invalid", id)
+	} else {
+		inst.dnsNameSet = true
+	}
 	return ec2.Instance{
 		InstanceId:       id,
 		InstanceType:     inst.instType,
 		ImageId:          inst.imageId,
-		DNSName:          fmt.Sprintf("%s.testing.invalid", id),
+		DNSName:          dnsName,
 		PrivateDNSName:   fmt.Sprintf("%s.internal.invalid", id),
 		IPAddress:        fmt.Sprintf("8.0.0.%d", inst.seq%256),
 		PrivateIPAddress: fmt.Sprintf("127.0.0.%d", inst.seq%256),
