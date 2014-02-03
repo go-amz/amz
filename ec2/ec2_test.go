@@ -96,14 +96,14 @@ func (s *S) TestRunInstancesExample(c *C) {
 		DisableAPITermination: true,
 		ShutdownBehavior:      "terminate",
 		PrivateIPAddress:      "10.0.0.25",
-		BlockDeviceMappings:   []ec2.BlockDeviceMapping{{
-			DeviceName: "device-name",
-			VirtualName: "virtual-name",
-			SnapshotId: "snapshot-id",
-			VolumeType: "volume-type",
-			VolumeSize: 10,
+		BlockDeviceMappings: []ec2.BlockDeviceMapping{{
+			DeviceName:          "device-name",
+			VirtualName:         "virtual-name",
+			SnapshotId:          "snapshot-id",
+			VolumeType:          "volume-type",
+			VolumeSize:          10,
 			DeleteOnTermination: true,
-			IOPS: 1000,
+			IOPS:                1000,
 		}},
 	}
 	resp, err := s.ec2.RunInstances(&options)
@@ -708,4 +708,13 @@ func (s *S) TestSignatureWithEndpointPath(c *C) {
 
 	req := testServer.WaitRequest()
 	c.Assert(req.Form["Signature"], DeepEquals, []string{"gdG/vEm+c6ehhhfkrJy3+wuVzw/rzKR42TYelMwti7M="})
+}
+
+func (s *S) TestCreateVpcExample(c *C) {
+}
+
+func (s *S) TestDeleteVpcExample(c *C) {
+}
+
+func (s *S) TestDescribeVpcsExample(c *C) {
 }
