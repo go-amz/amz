@@ -966,9 +966,9 @@ type DescribeVpcsResp struct {
 //
 // See http://goo.gl/Y5kHqG for more details.
 func (ec2 *EC2) DescribeVpcs(ids []string, filter *Filter) (resp *DescribeVpcsResp, err error) {
-	params := makeParams("DescribeVpc")
+	params := makeParams("DescribeVpcs")
 	for i, id := range ids {
-		params["vpcId."+strconv.Itoa(i+1)] = id
+		params["VpcId."+strconv.Itoa(i+1)] = id
 	}
 	filter.addParams(params)
 

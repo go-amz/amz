@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"launchpad.net/goamz/ec2"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -50,6 +51,7 @@ type Server struct {
 	instances            map[string]*Instance      // id -> instance
 	reservations         map[string]*reservation   // id -> reservation
 	groups               map[string]*securityGroup // id -> group
+	vpcs                 map[string]*vpc           // id -> vpc
 	maxId                counter
 	reqId                counter
 	reservationId        counter
@@ -191,6 +193,33 @@ func (g *securityGroup) ec2Perms() (perms []ec2.IPPerm) {
 	return
 }
 
+type vpc struct {
+	ec2.Vpc
+}
+
+func (v *vpc) matchAttr(attr, value string) (ok bool, err error) {
+	switch attr {
+	case "cidr":
+		return v.CidrBlock == value, nil
+	case "dhcp-options-id":
+		return v.DhcpOptionsId == value, nil
+	case "isDefault":
+		val, err := strconv.ParseBool(value)
+		if err != nil {
+			return false, err
+		}
+		return v.IsDefault == val, nil
+	case "state":
+		return v.State == value, nil
+	case "vpc-id":
+		return v.Id == value, nil
+	case "tag", "tag-key", "tag-value":
+		// Not done: tag, tag-key, tag-value.
+		return false, nil
+	}
+	return false, fmt.Errorf("unknown attribute %q", attr)
+}
+
 var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, string) interface{}{
 	"RunInstances":                  (*Server).runInstances,
 	"TerminateInstances":            (*Server).terminateInstances,
@@ -200,6 +229,9 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"DeleteSecurityGroup":           (*Server).deleteSecurityGroup,
 	"AuthorizeSecurityGroupIngress": (*Server).authorizeSecurityGroupIngress,
 	"RevokeSecurityGroupIngress":    (*Server).revokeSecurityGroupIngress,
+	"CreateVpc":                     (*Server).createVpc,
+	"DeleteVpc":                     (*Server).deleteVpc,
+	"DescribeVpcs":                  (*Server).describeVpcs,
 }
 
 const ownerId = "9876"
@@ -220,6 +252,7 @@ func NewServer() (*Server, error) {
 	srv := &Server{
 		instances:            make(map[string]*Instance),
 		groups:               make(map[string]*securityGroup),
+		vpcs:                 make(map[string]*vpc),
 		reservations:         make(map[string]*reservation),
 		initialInstanceState: Pending,
 	}
@@ -798,9 +831,11 @@ func (srv *Server) revokeSecurityGroupIngress(w http.ResponseWriter, req *http.R
 	}
 }
 
-var secGroupPat = regexp.MustCompile(`^sg-[a-z0-9]+$`)
-var ipPat = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$`)
-var ownerIdPat = regexp.MustCompile(`^[0-9]+$`)
+var (
+	secGroupPat = regexp.MustCompile(`^sg-[a-z0-9]+$`)
+	cidrIpPat   = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([0-9]+)$`)
+	ownerIdPat  = regexp.MustCompile(`^[0-9]+$`)
+)
 
 // parsePerms returns a slice of permKey values extracted
 // from the permission fields in req.
@@ -884,7 +919,7 @@ func (srv *Server) parsePerms(req *http.Request) []permKey {
 			}
 			switch rest {
 			case "CidrIp":
-				if !ipPat.MatchString(val) {
+				if !cidrIpPat.MatchString(val) {
 					fatalf(400, "InvalidPermission.Malformed", "Invalid IP range: %q", val)
 				}
 				ec2p.SourceIPs = append(ec2p.SourceIPs, val)
@@ -978,6 +1013,85 @@ func (srv *Server) deleteSecurityGroup(w http.ResponseWriter, req *http.Request,
 	}
 }
 
+// By default, AWS allows 5 VPC per region.
+const vpcPerRegionLimit = 5
+
+func (srv *Server) createVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	cidrBlock := parseCidr(req.Form.Get("CidrBlock"))
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if len(srv.vpcs) == vpcPerRegionLimit {
+		fatalf(
+			400,
+			"VpcLimitExceeded",
+			"The maximum number of VPCs has been reached.",
+		)
+	}
+	v := &vpc{ec2.Vpc{
+		Id:              generateHexId("vpc-"),
+		State:           "available",
+		CidrBlock:       cidrBlock,
+		DhcpOptionsId:   generateHexId("dopt-"),
+		InstanceTenancy: "default",
+	}}
+	srv.vpcs[v.Id] = v
+	r := &ec2.CreateVpcResp{
+		RequestId: reqId,
+		Vpc:       v.Vpc,
+	}
+	return r
+}
+
+func (srv *Server) deleteVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	id := req.Form.Get("VpcId")
+	if id == "" {
+		fatalf(
+			400,
+			"MissingParameter",
+			"The request must contain the parameter vpcId",
+		)
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if _, found := srv.vpcs[id]; !found {
+		fatalf(
+			400,
+			"InvalidVpcID.NotFound",
+			"The vpc ID '"+id+"' does not exist",
+		)
+	}
+
+	delete(srv.vpcs, id)
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{"", "DeleteVpcResponse"},
+		RequestId: reqId,
+	}
+}
+
+func (srv *Server) describeVpcs(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	idMap := make(map[string]bool)
+	for name, vals := range req.Form {
+		if strings.HasPrefix(name, "VpcId.") {
+			idMap[vals[0]] = true
+		}
+	}
+	f := newFilter(req.Form)
+	var resp ec2.DescribeVpcsResp
+	resp.RequestId = reqId
+	for _, v := range srv.vpcs {
+		ok, err := f.ok(v)
+		if ok && (len(idMap) == 0 || idMap[v.Id]) {
+			resp.Vpcs = append(resp.Vpcs, v.Vpc)
+		} else if err != nil {
+			fatalf(400, "InvalidParameterValue", "describe VPCs: %v", err)
+		}
+	}
+	return &resp
+}
+
 func (r *reservation) hasRunningMachine() bool {
 	for _, inst := range r.instances {
 		if inst.state.Code != ShuttingDown.Code && inst.state.Code != Terminated.Code {
@@ -987,12 +1101,46 @@ func (r *reservation) hasRunningMachine() bool {
 	return false
 }
 
+func parseCidr(val string) string {
+	if val == "" {
+		fatalf(
+			400,
+			"MissingParameter",
+			"The request must contain the parameter cidrBlock",
+		)
+	}
+	if !cidrIpPat.MatchString(val) {
+		fatalf(
+			400,
+			"InvalidParameterValue",
+			"Value ("+val+") for parameter cidrBlock is invalid. "+
+				"This is not a valid CIDR block.",
+		)
+	}
+	parts := cidrIpPat.FindStringSubmatch(val)
+	mask := atoi(parts[1])
+	if mask < 16 || mask > 28 {
+		fatalf(
+			400,
+			"InvalidVpcRange",
+			"The CIDR '"+val+"' is invalid.",
+		)
+	}
+	return val
+}
+
 type counter int
 
 func (c *counter) next() (i int) {
 	i = int(*c)
 	(*c)++
 	return
+}
+
+// generateHexId returns a 32-bit random number, encoded in hex
+// lower-case, optionally adding the given prefix.
+func generateHexId(prefix string) string {
+	return prefix + fmt.Sprintf("%x", rand.Int31())
 }
 
 // atoi is like strconv.Atoi but is fatal if the

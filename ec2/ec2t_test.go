@@ -111,7 +111,7 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
-// It will only be activated if the -all flag is specified.
+// It will only be activated if the -amazon flag is specified.
 type AmazonServerSuite struct {
 	srv AmazonServer
 	ServerTests
@@ -620,4 +620,63 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			c.Check(rg.Name, Equals, g.Name, Commentf("group %d (%v)", j, g))
 		}
 	}
+}
+
+func (s *ServerTests) TestVpcs(c *C) {
+	resp1, err := s.ec2.CreateVpc("10.0.0.0/16")
+	c.Assert(err, IsNil)
+	assertVpc(c, resp1.Vpc, "", "10.0.0.0/16")
+	id1 := resp1.Vpc.Id
+
+	resp2, err := s.ec2.CreateVpc("1.2.0.0/18")
+	c.Assert(err, IsNil)
+	assertVpc(c, resp2.Vpc, "", "1.2.0.0/18")
+	id2 := resp2.Vpc.Id
+
+	list, err := s.ec2.DescribeVpcs(nil, nil)
+	c.Assert(err, IsNil)
+	c.Assert(list.Vpcs, HasLen, 2)
+	if list.Vpcs[0].Id != id1 {
+		list.Vpcs[0], list.Vpcs[1] = list.Vpcs[1], list.Vpcs[0]
+	}
+	assertVpc(c, list.Vpcs[0], id1, resp1.Vpc.CidrBlock)
+	assertVpc(c, list.Vpcs[1], id2, resp2.Vpc.CidrBlock)
+
+	list, err = s.ec2.DescribeVpcs([]string{id1}, nil)
+	c.Assert(err, IsNil)
+	c.Assert(list.Vpcs, HasLen, 1)
+	assertVpc(c, list.Vpcs[0], id1, resp1.Vpc.CidrBlock)
+
+	f := ec2.NewFilter()
+	f.Add("cidr", resp2.Vpc.CidrBlock)
+	list, err = s.ec2.DescribeVpcs(nil, f)
+	c.Assert(err, IsNil)
+	c.Assert(list.Vpcs, HasLen, 1)
+	assertVpc(c, list.Vpcs[0], id2, resp2.Vpc.CidrBlock)
+
+	_, err = s.ec2.DeleteVpc(id1)
+	c.Assert(err, IsNil)
+	_, err = s.ec2.DeleteVpc(id1)
+	c.Assert(err, ErrorMatches, `.*\(InvalidVpcID.NotFound\)`)
+	_, err = s.ec2.DeleteVpc("invalid-id")
+	c.Assert(err, ErrorMatches, `.*\(InvalidVpcID.NotFound\)`)
+	_, err = s.ec2.DeleteVpc(id2)
+	c.Assert(err, IsNil)
+}
+
+func assertVpc(c *C, obtained ec2.Vpc, expectId, expectCidr string) {
+	if expectId != "" {
+		c.Check(obtained.Id, Equals, expectId)
+	} else {
+		c.Check(obtained.Id, Matches, `^vpc-[0-9a-f]+$`)
+	}
+	c.Check(obtained.State, Matches, "(available|pending)")
+	if expectCidr != "" {
+		c.Check(obtained.CidrBlock, Equals, expectCidr)
+	} else {
+		c.Check(obtained.CidrBlock, Matches, `^\d+\.\d+\.\d+\.\d+/\d+$`)
+	}
+	c.Check(obtained.DhcpOptionsId, Matches, `^dopt-[0-9a-f]+$`)
+	c.Check(obtained.InstanceTenancy, Equals, "default")
+	c.Check(obtained.IsDefault, Equals, false)
 }
