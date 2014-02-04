@@ -1,0 +1,317 @@
+//
+// goamz - Go packages to interact with the Amazon Web Services.
+//
+//   https://wiki.ubuntu.com/goamz
+//
+// Copyright (c) 2011 Canonical Ltd.
+//
+// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
+//
+
+package ec2_test
+
+import (
+	"launchpad.net/goamz/ec2"
+	. "launchpad.net/gocheck"
+	"time"
+)
+
+// Network interface tests with example responses
+
+func (s *S) TestCreateNetworkInterfaceExample(c *C) {
+	testServer.Response(200, nil, CreateNetworkInterfaceExample)
+
+	resp, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
+		SubnetId:         "subnet-b2a249da",
+		PrivateIPAddress: "10.0.2.157",
+		SecurityGroupIds: []string{"sg-1a2b3c4d"},
+	})
+	req := testServer.WaitRequest()
+
+	c.Assert(req.Form["Action"], DeepEquals, []string{"CreateNetworkInterface"})
+	c.Assert(req.Form["SubnetId"], DeepEquals, []string{"subnet-b2a249da"})
+	c.Assert(req.Form["PrivateIpAddress"], DeepEquals, []string{"10.0.2.157"})
+	c.Assert(req.Form["Description"], HasLen, 0)
+	c.Assert(req.Form["SecurityGroupId.1"], DeepEquals, []string{"sg-1a2b3c4d"})
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "8dbe591e-5a22-48cb-b948-dd0aadd55adf")
+	iface := resp.NetworkInterface
+	c.Check(iface.Id, Equals, "eni-cfca76a6")
+	c.Check(iface.SubnetId, Equals, "subnet-b2a249da")
+	c.Check(iface.VpcId, Equals, "vpc-c31dafaa")
+	c.Check(iface.AvailZone, Equals, "ap-southeast-1b")
+	c.Check(iface.Description, Equals, "")
+	c.Check(iface.OwnerId, Equals, "251839141158")
+	c.Check(iface.RequesterManaged, Equals, false)
+	c.Check(iface.Status, Equals, "available")
+	c.Check(iface.MACAddress, Equals, "02:74:b0:72:79:61")
+	c.Check(iface.PrivateIPAddress, Equals, "10.0.2.157")
+	c.Check(iface.SourceDestCheck, Equals, true)
+	c.Check(iface.Groups, DeepEquals, []ec2.SecurityGroup{
+		{Id: "sg-1a2b3c4d", Name: "default"},
+	})
+	c.Check(iface.Tags, HasLen, 0)
+}
+
+func (s *S) TestDeleteNetworkInterfaceExample(c *C) {
+	testServer.Response(200, nil, DeleteNetworkInterfaceExample)
+
+	resp, err := s.ec2.DeleteNetworkInterface("eni-id")
+	req := testServer.WaitRequest()
+
+	c.Assert(req.Form["Action"], DeepEquals, []string{"DeleteNetworkInterface"})
+	c.Assert(req.Form["NetworkInterfaceId"], DeepEquals, []string{"eni-id"})
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "e1c6d73b-edaa-4e62-9909-6611404e1739")
+}
+
+func (s *S) TestDescribeNetworkInterfacesExample(c *C) {
+	testServer.Response(200, nil, DescribeNetworkInterfacesExample)
+
+	ids := []string{"eni-0f62d866", "eni-a66ed5cf"}
+	resp, err := s.ec2.DescribeNetworkInterfaces(ids, nil)
+	req := testServer.WaitRequest()
+
+	c.Assert(req.Form["Action"], DeepEquals, []string{"DescribeNetworkInterfaces"})
+	c.Assert(req.Form["NetworkInterfaceId.1"], DeepEquals, []string{ids[0]})
+	c.Assert(req.Form["NetworkInterfaceId.2"], DeepEquals, []string{ids[1]})
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "fc45294c-006b-457b-bab9-012f5b3b0e40")
+	c.Check(resp.Interfaces, HasLen, 2)
+	iface := resp.Interfaces[0]
+	c.Check(iface.Id, Equals, ids[0])
+	c.Check(iface.SubnetId, Equals, "subnet-c53c87ac")
+	c.Check(iface.VpcId, Equals, "vpc-cc3c87a5")
+	c.Check(iface.AvailZone, Equals, "ap-southeast-1b")
+	c.Check(iface.Description, Equals, "")
+	c.Check(iface.OwnerId, Equals, "053230519467")
+	c.Check(iface.RequesterManaged, Equals, false)
+	c.Check(iface.Status, Equals, "in-use")
+	c.Check(iface.MACAddress, Equals, "02:81:60:cb:27:37")
+	c.Check(iface.PrivateIPAddress, Equals, "10.0.0.146")
+	c.Check(iface.SourceDestCheck, Equals, true)
+	c.Check(iface.Groups, DeepEquals, []ec2.SecurityGroup{
+		{Id: "sg-3f4b5653", Name: "default"},
+	})
+	c.Check(iface.Attachment, DeepEquals, ec2.NetworkInterfaceAttachment{
+		Id:                  "eni-attach-6537fc0c",
+		InstanceId:          "i-22197876",
+		InstanceOwnerId:     "053230519467",
+		DeviceIndex:         0,
+		Status:              "attached",
+		AttachTime:          "2012-07-01T21:45:27.000Z",
+		DeleteOnTermination: true,
+	})
+	c.Check(iface.Tags, HasLen, 0)
+	iface = resp.Interfaces[1]
+	c.Check(iface.Id, Equals, ids[1])
+	c.Check(iface.SubnetId, Equals, "subnet-cd8a35a4")
+	c.Check(iface.VpcId, Equals, "vpc-f28a359b")
+	c.Check(iface.AvailZone, Equals, "ap-southeast-1b")
+	c.Check(iface.Description, Equals, "Primary network interface")
+	c.Check(iface.OwnerId, Equals, "053230519467")
+	c.Check(iface.RequesterManaged, Equals, false)
+	c.Check(iface.Status, Equals, "in-use")
+	c.Check(iface.MACAddress, Equals, "02:78:d7:00:8a:1e")
+	c.Check(iface.PrivateIPAddress, Equals, "10.0.1.233")
+	c.Check(iface.SourceDestCheck, Equals, true)
+	c.Check(iface.Groups, DeepEquals, []ec2.SecurityGroup{
+		{Id: "sg-a2a0b2ce", Name: "quick-start-1"},
+	})
+	c.Check(iface.Attachment, DeepEquals, ec2.NetworkInterfaceAttachment{
+		Id:                  "eni-attach-a99c57c0",
+		InstanceId:          "i-886401dc",
+		InstanceOwnerId:     "053230519467",
+		DeviceIndex:         0,
+		Status:              "attached",
+		AttachTime:          "2012-06-27T20:08:44.000Z",
+		DeleteOnTermination: true,
+	})
+	c.Check(iface.Tags, HasLen, 0)
+}
+
+func (s *S) TestAttachNetworkInterfaceExample(c *C) {
+	testServer.Response(200, nil, AttachNetworkInterfaceExample)
+
+	resp, err := s.ec2.AttachNetworkInterface("eni-id", "i-id", 0)
+	req := testServer.WaitRequest()
+
+	c.Assert(req.Form["Action"], DeepEquals, []string{"AttachNetworkInterface"})
+	c.Assert(req.Form["NetworkInterfaceId"], DeepEquals, []string{"eni-id"})
+	c.Assert(req.Form["InstanceId"], DeepEquals, []string{"i-id"})
+	c.Assert(req.Form["DeviceIndex"], DeepEquals, []string{"0"})
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "ace8cd1e-e685-4e44-90fb-92014d907212")
+	c.Assert(resp.AttachmentId, Equals, "eni-attach-d94b09b0")
+}
+
+func (s *S) TestDetachNetworkInterfaceExample(c *C) {
+	testServer.Response(200, nil, DetachNetworkInterfaceExample)
+
+	resp, err := s.ec2.DetachNetworkInterface("eni-attach-id", true)
+	req := testServer.WaitRequest()
+
+	c.Assert(req.Form["Action"], DeepEquals, []string{"DetachNetworkInterface"})
+	c.Assert(req.Form["AttachmentId"], DeepEquals, []string{"eni-attach-id"})
+	c.Assert(req.Form["Force"], DeepEquals, []string{"true"})
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "ce540707-0635-46bc-97da-33a8a362a0e8")
+}
+
+// Network interface tests run against either a local test server or
+// live on EC2.
+
+func (s *ServerTests) TestNetworkInterfaces(c *C) {
+	vpcResp, err := s.ec2.CreateVpc("10.0.0.0/16")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.Vpc.Id
+	defer s.ec2.DeleteVpc(vpcId)
+
+	subResp, err := s.ec2.CreateSubnet(vpcId, "10.0.1.0/24", "")
+	c.Assert(err, IsNil)
+	subId := subResp.Subnet.Id
+	defer s.ec2.DeleteSubnet(subId)
+
+	sg := s.makeTestGroupVPC(c, vpcId, "vpc-sg-1", "vpc test group1")
+	defer s.ec2.DeleteSecurityGroup(sg)
+
+	instList, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		SubnetId:     subId,
+	})
+	c.Assert(err, IsNil)
+	inst := instList.Instances[0]
+	c.Assert(inst, NotNil)
+	instId := inst.InstanceId
+	defer s.ec2.TerminateInstances([]string{instId})
+
+	c.Logf("waiting for instance %q to become 'running'", instId)
+	instFilter := ec2.NewFilter()
+	instFilter.Add("instance-state-name", "running")
+	instFilter.Add("instance-id", instId)
+	for i := 0; i < 1000; i++ {
+		if i > 0 {
+			time.Sleep(5 * time.Second)
+			c.Logf("trying again..")
+		}
+		instResp, err := s.ec2.Instances(nil, instFilter)
+		if err != nil {
+			c.Fatalf("Instances() returned: %v", err)
+		}
+		if len(instResp.Reservations) != 1 {
+			continue
+		}
+		if len(instResp.Reservations[0].Instances) != 1 {
+			continue
+		}
+		inst = instResp.Reservations[0].Instances[0]
+		c.Logf("instance %q state is now %q", inst.InstanceId, inst.State.Name)
+		if inst.State.Name == "running" && inst.InstanceId == instId {
+			break
+		}
+	}
+
+	_, err = s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{})
+	c.Assert(err, ErrorMatches, `.*\(MissingParameter\)`)
+	_, err = s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
+		SubnetId: "invalid-id",
+	})
+	c.Assert(err, ErrorMatches, `.*\(InvalidSubnetID.NotFound\)`)
+
+	resp1, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
+		SubnetId:         subId,
+		PrivateIPAddress: "10.0.1.10",
+		Description:      "My first iface",
+	})
+	c.Assert(err, IsNil)
+	assertNetworkInterface(c, resp1.NetworkInterface, "", subId, "10.0.1.10")
+	c.Check(resp1.NetworkInterface.Description, Equals, "My first iface")
+	id1 := resp1.NetworkInterface.Id
+
+	resp2, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
+		SubnetId:         subId,
+		PrivateIPAddress: "10.0.1.20",
+		SecurityGroupIds: []string{sg.Id},
+	})
+	c.Assert(err, IsNil)
+	assertNetworkInterface(c, resp2.NetworkInterface, "", subId, "10.0.1.20")
+	c.Assert(resp2.NetworkInterface.Groups, DeepEquals, []ec2.SecurityGroup{sg})
+	id2 := resp2.NetworkInterface.Id
+
+	list, err := s.ec2.DescribeNetworkInterfaces(nil, nil)
+	c.Assert(err, IsNil)
+	for _, iface := range list.Interfaces {
+		if iface.Id == id1 {
+			assertNetworkInterface(c, iface, id1, subId, "10.0.1.10")
+		} else if iface.Id == id2 {
+			assertNetworkInterface(c, iface, id2, subId, "10.0.1.20")
+		}
+	}
+
+	list, err = s.ec2.DescribeNetworkInterfaces([]string{id1}, nil)
+	c.Assert(err, IsNil)
+	c.Assert(list.Interfaces, HasLen, 1)
+	assertNetworkInterface(c, list.Interfaces[0], id1, subId, "10.0.1.10")
+
+	f := ec2.NewFilter()
+	f.Add("private-ip-address", "10.0.1.20")
+	list, err = s.ec2.DescribeNetworkInterfaces(nil, f)
+	c.Assert(err, IsNil)
+	c.Assert(list.Interfaces, HasLen, 1)
+	assertNetworkInterface(c, list.Interfaces[0], id2, subId, "10.0.1.20")
+
+	_, err = s.ec2.AttachNetworkInterface("invalid-id", instId, 1)
+	c.Check(err, ErrorMatches, `.*\(InvalidNetworkInterfaceId.Malformed\)`)
+	_, err = s.ec2.AttachNetworkInterface(id2, "invalid-id", 1)
+	c.Check(err, ErrorMatches, `.*\(InvalidInstanceID.Malformed\)`)
+
+	attResp, err := s.ec2.AttachNetworkInterface(id2, instId, 1)
+	c.Assert(err, IsNil)
+	c.Check(attResp.AttachmentId, Not(Equals), "")
+
+	list, err = s.ec2.DescribeNetworkInterfaces([]string{id2}, nil)
+	c.Assert(err, IsNil)
+	att := list.Interfaces[0].Attachment
+	c.Check(att.Id, Equals, attResp.AttachmentId)
+	c.Check(att.InstanceId, Equals, instId)
+	c.Check(att.DeviceIndex, Equals, 1)
+	c.Check(att.Status, Matches, "(attaching|in-use)")
+
+	_, err = s.ec2.DetachNetworkInterface(att.Id, true)
+	c.Check(err, IsNil)
+	_, err = s.ec2.DetachNetworkInterface("invalid-id", false)
+	c.Check(err, ErrorMatches, `.*\(InvalidNetworkInterfaceAttachmentId.Malformed\)`)
+
+	_, err = s.ec2.DeleteNetworkInterface(id1)
+	c.Check(err, IsNil)
+	_, err = s.ec2.DeleteNetworkInterface(id1)
+	c.Check(err, ErrorMatches, `.*\(InvalidNetworkInterfaceID.NotFound\)`)
+	_, err = s.ec2.DeleteNetworkInterface("invalid-id")
+	c.Check(err, ErrorMatches, `.*\(InvalidNetworkInterfaceId.Malformed\)`)
+	_, err = s.ec2.DeleteNetworkInterface(id2)
+	c.Check(err, IsNil)
+}
+
+func assertNetworkInterface(c *C, obtained ec2.NetworkInterface, expectId, expectSubId, expectIP string) {
+	if expectId != "" {
+		c.Check(obtained.Id, Equals, expectId)
+	} else {
+		c.Check(obtained.Id, Matches, `^eni-[0-9a-f]+$`)
+	}
+	c.Check(obtained.Status, Matches, "(available|pending|in-use)")
+	if expectSubId != "" {
+		c.Check(obtained.SubnetId, Equals, expectSubId)
+	} else {
+		c.Check(obtained.SubnetId, Matches, `^subnet-[0-9a-f]+$`)
+	}
+	if expectIP != "" {
+		c.Check(obtained.PrivateIPAddress, Equals, expectIP)
+	}
+	c.Check(obtained.Attachment, DeepEquals, ec2.NetworkInterfaceAttachment{})
+}

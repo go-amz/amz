@@ -626,9 +626,20 @@ type CreateSecurityGroupResp struct {
 //
 // See http://goo.gl/Eo7Yl for more details.
 func (ec2 *EC2) CreateSecurityGroup(name, description string) (resp *CreateSecurityGroupResp, err error) {
+	return ec2.CreateSecurityGroupVPC("", name, description)
+}
+
+// CreateSecurityGroupVPC creates a security group in EC2, associated
+// with the given VPC ID
+//
+// See http://goo.gl/Eo7Yl for more details.
+func (ec2 *EC2) CreateSecurityGroupVPC(vpcId, name, description string) (resp *CreateSecurityGroupResp, err error) {
 	params := makeParams("CreateSecurityGroup")
 	params["GroupName"] = name
 	params["GroupDescription"] = description
+	if vpcId != "" {
+		params["VpcId"] = vpcId
+	}
 
 	resp = &CreateSecurityGroupResp{}
 	err = ec2.query(params, resp)
@@ -653,6 +664,7 @@ type SecurityGroupsResp struct {
 // See http://goo.gl/CIdyP for more details.
 type SecurityGroupInfo struct {
 	SecurityGroup
+	VpcId       string   `xml:"vpcId"`
 	OwnerId     string   `xml:"ownerId"`
 	Description string   `xml:"groupDescription"`
 	IPPerms     []IPPerm `xml:"ipPermissions>item"`
