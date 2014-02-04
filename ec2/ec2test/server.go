@@ -1156,7 +1156,7 @@ func (srv *Server) createSubnet(w http.ResponseWriter, req *http.Request, reqId 
 			"The vpc ID '"+vpcId+"' does not exist",
 		)
 	}
-	if v.numSubnets == subnetsPerVpcLimit {
+	if v.numSubnets >= subnetsPerVpcLimit {
 		fatalf(
 			400,
 			"SubnetLimitExceeded",

@@ -627,7 +627,7 @@ var DescribeVpcsExample = `
 </DescribeVpcsResponse>
 `
 
-//
+// http://goo.gl/wLPhf
 var CreateSubnetExample = `
 <CreateSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
@@ -643,7 +643,7 @@ var CreateSubnetExample = `
 </CreateSubnetResponse>
 `
 
-//
+// http://goo.gl/KmhcBM
 var DeleteSubnetExample = `
 <DeleteSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
    <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
@@ -651,7 +651,7 @@ var DeleteSubnetExample = `
 </DeleteSubnetResponse>
 `
 
-//
+// http://goo.gl/NTKQVI
 var DescribeSubnetsExample = `
 <DescribeSubnetsResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
