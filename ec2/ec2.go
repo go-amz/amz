@@ -898,13 +898,11 @@ func (ec2 *EC2) RebootInstances(ids ...string) (resp *SimpleResp, err error) {
 //
 // See http://goo.gl/Uy6ZLL for more details.
 type Vpc struct {
-	Id              string `xml:"vpcId"`
-	State           string `xml:"state"`
-	CidrBlock       string `xml:"cidrBlock"`
-	DhcpOptionsId   string `xml:"dhcpOptionsId"`
-	Tags            []Tag  `xml:"tagSet>item"`
-	InstanceTenancy string `xml:"instanceTenancy"`
-	IsDefault       bool   `xml:"isDefault"`
+	Id            string `xml:"vpcId"`
+	State         string `xml:"state"`
+	CidrBlock     string `xml:"cidrBlock"`
+	DhcpOptionsId string `xml:"dhcpOptionsId"`
+	Tags          []Tag  `xml:"tagSet>item"`
 }
 
 // CreateVpcResp is the response to a CreateVpc request.

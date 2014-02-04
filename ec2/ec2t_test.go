@@ -677,6 +677,4 @@ func assertVpc(c *C, obtained ec2.Vpc, expectId, expectCidr string) {
 		c.Check(obtained.CidrBlock, Matches, `^\d+\.\d+\.\d+\.\d+/\d+$`)
 	}
 	c.Check(obtained.DhcpOptionsId, Matches, `^dopt-[0-9a-f]+$`)
-	c.Check(obtained.InstanceTenancy, Equals, "default")
-	c.Check(obtained.IsDefault, Equals, false)
 }

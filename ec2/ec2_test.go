@@ -726,7 +726,6 @@ func (s *S) TestCreateVpcExample(c *C) {
 	c.Check(vpc.State, Equals, "pending")
 	c.Check(vpc.CidrBlock, Equals, "10.0.0.0/16")
 	c.Check(vpc.DhcpOptionsId, Equals, "dopt-1a2b3c4d2")
-	c.Check(vpc.InstanceTenancy, Equals, "default")
 	c.Check(vpc.Tags, HasLen, 0)
 }
 
@@ -760,7 +759,5 @@ func (s *S) TestDescribeVpcsExample(c *C) {
 	c.Check(vpc.State, Equals, "available")
 	c.Check(vpc.CidrBlock, Equals, "10.0.0.0/23")
 	c.Check(vpc.DhcpOptionsId, Equals, "dopt-7a8b9c2d")
-	c.Check(vpc.InstanceTenancy, Equals, "default")
-	c.Check(vpc.IsDefault, Equals, false)
 	c.Check(vpc.Tags, HasLen, 0)
 }

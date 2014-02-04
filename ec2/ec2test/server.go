@@ -203,19 +203,13 @@ func (v *vpc) matchAttr(attr, value string) (ok bool, err error) {
 		return v.CidrBlock == value, nil
 	case "dhcp-options-id":
 		return v.DhcpOptionsId == value, nil
-	case "isDefault":
-		val, err := strconv.ParseBool(value)
-		if err != nil {
-			return false, err
-		}
-		return v.IsDefault == val, nil
 	case "state":
 		return v.State == value, nil
 	case "vpc-id":
 		return v.Id == value, nil
 	case "tag", "tag-key", "tag-value":
 		// Not done: tag, tag-key, tag-value.
-		return false, nil
+		return false, fmt.Errorf("tag, tag-key, and tag-value filters not implemented")
 	}
 	return false, fmt.Errorf("unknown attribute %q", attr)
 }
@@ -1018,6 +1012,7 @@ const vpcPerRegionLimit = 5
 
 func (srv *Server) createVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	cidrBlock := parseCidr(req.Form.Get("CidrBlock"))
+
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	if len(srv.vpcs) == vpcPerRegionLimit {
@@ -1028,11 +1023,10 @@ func (srv *Server) createVpc(w http.ResponseWriter, req *http.Request, reqId str
 		)
 	}
 	v := &vpc{ec2.Vpc{
-		Id:              generateHexId("vpc-"),
-		State:           "available",
-		CidrBlock:       cidrBlock,
-		DhcpOptionsId:   generateHexId("dopt-"),
-		InstanceTenancy: "default",
+		Id:            generateHexId("vpc-"),
+		State:         "available",
+		CidrBlock:     cidrBlock,
+		DhcpOptionsId: generateHexId("dopt-"),
 	}}
 	srv.vpcs[v.Id] = v
 	r := &ec2.CreateVpcResp{
