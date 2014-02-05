@@ -277,11 +277,15 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 		attResp, err = s.ec2.AttachNetworkInterface(id2, instId, 1)
 		if err != nil {
 			c.Logf("AttachNetworkInterface returned: %v; retrying...", err)
+			attResp = nil
 			continue
 		}
 		c.Logf("AttachNetworkInterface succeeded")
 		c.Check(attResp.AttachmentId, Not(Equals), "")
 		break
+	}
+	if attResp == nil {
+		c.Fatalf("timeout while waiting for AttachNetworkInterface to succeed")
 	}
 
 	list, err = s.ec2.NetworkInterfaces([]string{id2}, nil)
@@ -307,8 +311,9 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 			continue
 		}
 		c.Logf("DeleteNetworkInterface succeeded")
-		break
+		return
 	}
+	c.Fatalf("timeout while waiting for DeleteNetworkInterface to succeed")
 }
 
 func assertNetworkInterface(c *C, obtained ec2.NetworkInterface, expectId, expectSubId string, expectIPs []ec2.PrivateIP) {
