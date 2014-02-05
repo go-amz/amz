@@ -9,7 +9,7 @@ var ErrorDump = `
 
 // http://goo.gl/Mcm3b
 var RunInstancesExample = `
-<RunInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/"> 
+<RunInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-13/"> 
   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
   <reservationId>r-47a5402e</reservationId> 
   <ownerId>999988887777</ownerId>
@@ -40,9 +40,82 @@ var RunInstancesExample = `
         <state>enabled</state>
       </monitoring>
       <virtualizationType>paravirtual</virtualizationType>
+      <subnetId>subnet-id</subnetId>
+      <vpcId>vpc-id</vpcId>
+      <sourceDestCheck>true</sourceDestCheck>
       <clientToken/>
       <tagSet/>
       <hypervisor>xen</hypervisor>
+      <networkInterfaceSet>
+        <item>
+          <networkInterfaceId>eni-c6bb50ae</networkInterfaceId>
+          <subnetId>subnet-id</subnetId>
+          <vpcId>vpc-id</vpcId>
+          <description>eth0</description>
+          <ownerId>111122223333</ownerId>
+          <status>in-use</status>
+          <privateIpAddress>10.0.0.25</privateIpAddress>
+          <macAddress>11:22:33:44:55:66</macAddress>
+          <sourceDestCheck>true</sourceDestCheck>
+          <groupSet>
+            <item>
+              <groupId>sg-1</groupId>
+              <groupName>vpc sg-1</groupName>
+            </item>
+            <item>
+              <groupId>sg-2</groupId>
+              <groupName>vpc sg-2</groupName>
+            </item>
+          </groupSet>
+          <attachment>
+            <attachmentId>eni-attach-0326646a</attachmentId>
+            <deviceIndex>0</deviceIndex>
+            <status>attaching</status>
+            <attachTime>2011-12-20T08:29:31.000Z</attachTime>
+            <deleteOnTermination>true</deleteOnTermination>
+          </attachment>
+          <privateIpAddressesSet>
+            <item>
+              <privateIpAddress>10.0.0.25</privateIpAddress>
+              <primary>true</primary>
+            </item>
+          </privateIpAddressesSet>
+        </item>
+        <item>
+          <networkInterfaceId>eni-id</networkInterfaceId>
+          <subnetId>subnet-id</subnetId>
+          <vpcId>vpc-id</vpcId>
+          <description/>
+          <ownerId>111122223333</ownerId>
+          <status>in-use</status>
+          <privateIpAddress>10.0.1.10</privateIpAddress>
+          <macAddress>11:22:33:44:55:66</macAddress>
+          <sourceDestCheck>true</sourceDestCheck>
+          <groupSet>
+            <item>
+              <groupId>sg-id</groupId>
+              <groupName>vpc default</groupName>
+            </item>
+          </groupSet>
+          <attachment>
+            <attachmentId>eni-attach-id</attachmentId>
+            <deviceIndex>1</deviceIndex>
+            <status>attaching</status>
+            <attachTime>2011-12-20T08:29:31.000Z</attachTime>
+            <deleteOnTermination>false</deleteOnTermination>
+          </attachment>
+          <privateIpAddressesSet>
+            <item>
+              <privateIpAddress>10.0.1.10</privateIpAddress>
+              <primary>true</primary>
+            </item>
+            <item>
+              <privateIpAddress>10.0.1.20</privateIpAddress>
+              <primary>false</primary>
+            </item>
+          </privateIpAddressesSet>
+        </item>
+      </networkInterfaceSet>
     </item>
     <item>
       <instanceId>i-2bc64242</instanceId>

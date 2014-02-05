@@ -105,6 +105,25 @@ func (s *S) TestRunInstancesExample(c *C) {
 			DeleteOnTermination: true,
 			IOPS:                1000,
 		}},
+		NetworkInterfaces: []ec2.NetworkInterfaceSpec{{
+			DeviceIndex:              0,
+			SubnetId:                 "subnet-id",
+			Description:              "eth0",
+			PrivateIPAddress:         "10.0.0.25",
+			DeleteOnTermination:      true,
+			SecurityGroupIds:         []string{"sg-1", "sg-2"},
+			SecondaryPrivateIPsCount: 2,
+		}, {
+			Id:          "eni-id",
+			DeviceIndex: 1,
+			PrivateIPs: []ec2.PrivateIP{{
+				Address:   "10.0.1.10",
+				IsPrimary: true,
+			}, {
+				Address:   "10.0.1.20",
+				IsPrimary: false,
+			}},
+		}},
 	}
 	resp, err := s.ec2.RunInstances(&options)
 
@@ -136,6 +155,20 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.VolumeSize"], DeepEquals, []string{"10"})
 	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.Iops"], DeepEquals, []string{"1000"})
 	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.DeleteOnTermination"], DeepEquals, []string{"true"})
+	c.Assert(req.Form["NetworkInterface.1.DeviceIndex"], DeepEquals, []string{"0"})
+	c.Assert(req.Form["NetworkInterface.1.SubnetId"], DeepEquals, []string{"subnet-id"})
+	c.Assert(req.Form["NetworkInterface.1.Description"], DeepEquals, []string{"eth0"})
+	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddress"], DeepEquals, []string{"10.0.0.25"})
+	c.Assert(req.Form["NetworkInterface.1.SecurityGroupId.1"], DeepEquals, []string{"sg-1"})
+	c.Assert(req.Form["NetworkInterface.1.SecurityGroupId.2"], DeepEquals, []string{"sg-2"})
+	c.Assert(req.Form["NetworkInterface.1.DeleteOnTermination"], DeepEquals, []string{"true"})
+	c.Assert(req.Form["NetworkInterface.1.SecondaryPrivateIpAddressCount"], DeepEquals, []string{"2"})
+	c.Assert(req.Form["NetworkInterface.2.NetworkInterfaceId"], DeepEquals, []string{"eni-id"})
+	c.Assert(req.Form["NetworkInterface.2.DeviceIndex"], DeepEquals, []string{"1"})
+	c.Assert(req.Form["NetworkInterface.2.PrivateIpAddresses.1.PrivateIpAddress"], DeepEquals, []string{"10.0.1.10"})
+	c.Assert(req.Form["NetworkInterface.2.PrivateIpAddresses.1.Primary"], DeepEquals, []string{"true"})
+	c.Assert(req.Form["NetworkInterface.2.PrivateIpAddresses.2.PrivateIpAddress"], DeepEquals, []string{"10.0.1.20"})
+	c.Assert(req.Form["NetworkInterface.2.PrivateIpAddresses.2.Primary"], DeepEquals, []string{"false"})
 
 	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
@@ -153,6 +186,53 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(i0.AMILaunchIndex, Equals, 0)
 	c.Assert(i0.VirtType, Equals, "paravirtual")
 	c.Assert(i0.Hypervisor, Equals, "xen")
+	c.Assert(i0.SubnetId, Equals, "subnet-id")
+	c.Assert(i0.VPCId, Equals, "vpc-id")
+	c.Assert(i0.NetworkInterfaces, HasLen, 2)
+	c.Assert(i0.NetworkInterfaces, DeepEquals, []ec2.NetworkInterface{{
+		Id:               "eni-c6bb50ae",
+		SubnetId:         "subnet-id",
+		VPCId:            "vpc-id",
+		Description:      "eth0",
+		SourceDestCheck:  true,
+		OwnerId:          "111122223333",
+		Status:           "in-use",
+		PrivateIPAddress: "10.0.0.25",
+		Groups: []ec2.SecurityGroup{
+			{Name: "vpc sg-1", Id: "sg-1"},
+			{Name: "vpc sg-2", Id: "sg-2"},
+		},
+		MACAddress: "11:22:33:44:55:66",
+		PrivateIPs: []ec2.PrivateIP{{Address: "10.0.0.25", IsPrimary: true}},
+		Attachment: ec2.NetworkInterfaceAttachment{
+			Id:                  "eni-attach-0326646a",
+			DeviceIndex:         0,
+			Status:              "attaching",
+			AttachTime:          "2011-12-20T08:29:31.000Z",
+			DeleteOnTermination: true,
+		},
+	}, {
+		Id:               "eni-id",
+		SubnetId:         "subnet-id",
+		VPCId:            "vpc-id",
+		SourceDestCheck:  true,
+		OwnerId:          "111122223333",
+		Status:           "in-use",
+		PrivateIPAddress: "10.0.1.10",
+		Groups:           []ec2.SecurityGroup{{Name: "vpc default", Id: "sg-id"}},
+		MACAddress:       "11:22:33:44:55:66",
+		PrivateIPs: []ec2.PrivateIP{
+			{Address: "10.0.1.10", IsPrimary: true},
+			{Address: "10.0.1.20", IsPrimary: false},
+		},
+		Attachment: ec2.NetworkInterfaceAttachment{
+			Id:                  "eni-attach-id",
+			DeviceIndex:         1,
+			Status:              "attaching",
+			AttachTime:          "2011-12-20T08:29:31.000Z",
+			DeleteOnTermination: false,
+		},
+	}})
 
 	i1 := resp.Instances[1]
 	c.Assert(i1.InstanceId, Equals, "i-2bc64242")

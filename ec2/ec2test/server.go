@@ -86,6 +86,8 @@ type Instance struct {
 	reservation *reservation
 	instType    string
 	state       ec2.InstanceState
+	subnetId    string
+	vpcId       string
 }
 
 // permKey represents permission for a given security
@@ -151,6 +153,8 @@ func (g *securityGroup) matchAttr(attr, value string) (ok bool, err error) {
 		return g.hasPerm(func(k permKey) bool { return k.protocol == value }), nil
 	case "owner-id":
 		return value == ownerId, nil
+	case "vpc-id":
+		return g.vpcId == value, nil
 	}
 	return false, fmt.Errorf("unknown attribute %q", attr)
 }
@@ -528,13 +532,22 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	//    AvailZone                 ?
 	//    GroupName                 tag
 	//    Monitoring                ignore?
-	//    SubnetId                  ?
 	//    DisableAPITermination     bool
 	//    ShutdownBehavior          string
 	//    PrivateIPAddress          string
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
+
+	var vpcId string
+	subnetId := req.Form.Get("SubnetId")
+	if subnetId != "" {
+		sub, found := srv.subnets[subnetId]
+		if !found {
+			fatalf(400, "InvalidSubnetID.NotFound", "subnet %s not found", subnetId)
+		}
+		vpcId = sub.VPCId
+	}
 
 	// make sure that form fields are correct before creating the reservation.
 	instType := req.Form.Get("InstanceType")
@@ -548,7 +561,7 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	resp.OwnerId = ownerId
 
 	for i := 0; i < max; i++ {
-		inst := srv.newInstance(r, instType, imageId, srv.initialInstanceState)
+		inst := srv.newInstance(r, instType, imageId, srv.initialInstanceState, subnetId, vpcId)
 		inst.UserData = userData
 		resp.Instances = append(resp.Instances, inst.ec2instance())
 	}
@@ -567,10 +580,11 @@ func (srv *Server) group(group ec2.SecurityGroup) *securityGroup {
 	return nil
 }
 
-// NewInstances creates n new instances in srv with the given instance type,
-// image ID,  initial state and security groups. If any group does not already
-// exist, it will be created. NewInstances returns the ids of the new instances.
-func (srv *Server) NewInstances(n int, instType string, imageId string, state ec2.InstanceState, groups []ec2.SecurityGroup) []string {
+// NewInstances creates n new instances in srv with the given instance
+// type, image ID, initial state, security groups, subnetId and
+// vpcId. If any group does not already exist, it will be
+// created. NewInstances returns the ids of the new instances.
+func (srv *Server) NewInstances(n int, instType string, imageId string, state ec2.InstanceState, groups []ec2.SecurityGroup, subnetId, vpcId string) []string {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
@@ -586,19 +600,23 @@ func (srv *Server) NewInstances(n int, instType string, imageId string, state ec
 
 	ids := make([]string, n)
 	for i := 0; i < n; i++ {
-		inst := srv.newInstance(r, instType, imageId, state)
+		inst := srv.newInstance(r, instType, imageId, state, subnetId, vpcId)
 		ids[i] = inst.id()
 	}
 	return ids
 }
 
-func (srv *Server) newInstance(r *reservation, instType string, imageId string, state ec2.InstanceState) *Instance {
+func (srv *Server) newInstance(r *reservation, instType string, imageId string, state ec2.InstanceState, subnetId, vpcId string) *Instance {
 	inst := &Instance{
 		seq:         srv.maxId.next(),
 		instType:    instType,
 		imageId:     imageId,
 		state:       state,
 		reservation: r,
+	}
+	if vpcId != "" && subnetId != "" {
+		inst.vpcId = vpcId
+		inst.subnetId = subnetId
 	}
 	id := inst.id()
 	srv.instances[id] = inst
@@ -670,6 +688,8 @@ func (inst *Instance) ec2instance() ec2.Instance {
 		IPAddress:        fmt.Sprintf("8.0.0.%d", inst.seq%256),
 		PrivateIPAddress: fmt.Sprintf("127.0.0.%d", inst.seq%256),
 		State:            inst.state,
+		VPCId:            inst.vpcId,
+		SubnetId:         inst.subnetId,
 		// TODO the rest
 	}
 }
@@ -680,6 +700,10 @@ func (inst *Instance) matchAttr(attr, value string) (ok bool, err error) {
 		return value == "i386", nil
 	case "instance-id":
 		return inst.id() == value, nil
+	case "subnet-id":
+		return inst.subnetId == value, nil
+	case "vpc-id":
+		return inst.vpcId == value, nil
 	case "instance.group-id", "group-id":
 		for _, g := range inst.reservation.groups {
 			if g.id == value {
@@ -732,6 +756,10 @@ func (srv *Server) createSecurityGroup(w http.ResponseWriter, req *http.Request,
 		id:          fmt.Sprintf("sg-%d", srv.groupId.next()),
 		perms:       make(map[permKey]bool),
 	}
+	vpcId := req.Form.Get("VpcId")
+	if vpcId != "" {
+		g.vpcId = vpcId
+	}
 	srv.groups[g.id] = g
 	// we define a local type for this because ec2.CreateSecurityGroupResp
 	// contains SecurityGroup, but the response to this request
@@ -783,6 +811,14 @@ func (srv *Server) describeInstances(w http.ResponseWriter, req *http.Request, r
 			if len(insts) > 0 && !insts[inst] {
 				continue
 			}
+			// make instances in state "shutting-down" to transition
+			// to "terminated" first, so we can simulate: shutdown,
+			// subsequent refresh of the state with Instances(),
+			// terminated.
+			if inst.state == ShuttingDown {
+				inst.state = Terminated
+			}
+
 			ok, err := f.ok(inst)
 			if ok {
 				instance := inst.ec2instance()

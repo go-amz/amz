@@ -89,12 +89,17 @@ func (s *ServerTests) TestVPCs(c *C) {
 
 	list, err := s.ec2.VPCs(nil, nil)
 	c.Assert(err, IsNil)
-	c.Assert(list.VPCs, HasLen, 2)
-	if list.VPCs[0].Id != id1 {
-		list.VPCs[0], list.VPCs[1] = list.VPCs[1], list.VPCs[0]
+	// We expect at least 2 VPCs here, there might be others in the
+	// users account, but we only check for the ones we just added.
+	c.Check(len(list.VPCs) >= 2, Equals, true)
+	for _, vpc := range list.VPCs {
+		switch vpc.Id {
+		case id1:
+			assertVPC(c, vpc, id1, resp1.VPC.CIDRBlock)
+		case id2:
+			assertVPC(c, vpc, id2, resp2.VPC.CIDRBlock)
+		}
 	}
-	assertVPC(c, list.VPCs[0], id1, resp1.VPC.CIDRBlock)
-	assertVPC(c, list.VPCs[1], id2, resp2.VPC.CIDRBlock)
 
 	list, err = s.ec2.VPCs([]string{id1}, nil)
 	c.Assert(err, IsNil)

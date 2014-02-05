@@ -5,6 +5,7 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"time"
 
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
@@ -135,15 +136,47 @@ type ServerTests struct {
 	ec2 *ec2.EC2
 }
 
-func terminateInstances(c *C, e *ec2.EC2, insts []*ec2.Instance) {
-	var ids []string
-	for _, inst := range insts {
-		if inst != nil {
-			ids = append(ids, inst.InstanceId)
-		}
-	}
+func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	_, err := e.TerminateInstances(ids)
 	c.Check(err, IsNil, Commentf("%d INSTANCES LEFT RUNNING!!!", len(ids)))
+	// We need to wait until the instances are really off, because
+	// entities that depend on them won't be deleted (i.e. groups,
+	// NICs, subnets, etc.)
+	testAttempt := aws.AttemptStrategy{
+		Total: 10 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	f := ec2.NewFilter()
+	f.Add("instance-state-name", "terminated")
+	idsLeft := make(map[string]bool)
+	for _, id := range ids {
+		idsLeft[id] = true
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for %v to get terminated", ids)
+		resp, err := e.Instances(ids, f)
+		if err != nil {
+			c.Fatalf("not waiting for %v to terminate: %v", ids, err)
+		}
+		for _, r := range resp.Reservations {
+			for _, inst := range r.Instances {
+				if idsLeft[inst.InstanceId] {
+					idsLeft[inst.InstanceId] = false
+				}
+			}
+		}
+		ids = []string{}
+		for id, left := range idsLeft {
+			if left {
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) == 0 {
+			c.Logf("all instances terminated.")
+			return
+		}
+	}
+	c.Fatalf("%d INSTANCES LEFT RUNNING!!!", len(ids))
 }
 
 func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup {
@@ -314,12 +347,29 @@ type filterSpec struct {
 }
 
 func (s *ServerTests) TestInstanceFiltering(c *C) {
-	groupResp, err := s.ec2.CreateSecurityGroup(sessionName("testgroup1"), "testgroup one description")
+	vpcResp, err := s.ec2.CreateVPC("10.0.0.0/16", "")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.VPC.Id
+	defer s.ec2.DeleteVPC(vpcId)
+
+	subResp, err := s.ec2.CreateSubnet(vpcId, "10.0.0.0/24", "")
+	c.Assert(err, IsNil)
+	subId := subResp.Subnet.Id
+	defer s.ec2.DeleteSubnet(subId)
+
+	groupResp, err := s.ec2.CreateSecurityGroup(
+		sessionName("testgroup1"),
+		"testgroup one description",
+	)
 	c.Assert(err, IsNil)
 	group1 := groupResp.SecurityGroup
 	defer s.ec2.DeleteSecurityGroup(group1)
 
-	groupResp, err = s.ec2.CreateSecurityGroup(sessionName("testgroup2"), "testgroup two description")
+	groupResp, err = s.ec2.CreateSecurityGroupVPC(
+		vpcId,
+		sessionName("testgroup2"),
+		"testgroup two description vpc",
+	)
 	c.Assert(err, IsNil)
 	group2 := groupResp.SecurityGroup
 	defer s.ec2.DeleteSecurityGroup(group2)
@@ -334,12 +384,12 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 	c.Assert(err, IsNil)
 	insts[0] = &inst.Instances[0]
 	insts[1] = &inst.Instances[1]
-	defer terminateInstances(c, s.ec2, insts)
 
 	imageId2 := "ami-e358958a" // Natty server, i386, EBS store
 	inst, err = s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:        imageId2,
 		InstanceType:   "t1.micro",
+		SubnetId:       subId,
 		SecurityGroups: []ec2.SecurityGroup{group2},
 	})
 	c.Assert(err, IsNil)
@@ -351,6 +401,8 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 		}
 		return
 	}
+
+	defer terminateInstances(c, s.ec2, ids(0, 1, 2))
 
 	tests := []struct {
 		about       string
@@ -433,6 +485,13 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 				{"image-id", []string{imageId2}},
 				{"group-name", []string{group1.Name}},
 			},
+		}, {
+			about: "VPC filters in combination",
+			filters: []filterSpec{
+				{"vpc-id", []string{vpcId}},
+				{"subnet-id", []string{subId}},
+			},
+			resultIds: ids(2),
 		},
 	}
 	for i, t := range tests {
@@ -482,9 +541,29 @@ func namesOnly(gs []ec2.SecurityGroup) []ec2.SecurityGroup {
 }
 
 func (s *ServerTests) TestGroupFiltering(c *C) {
-	g := make([]ec2.SecurityGroup, 4)
+	vpcResp, err := s.ec2.CreateVPC("10.0.0.0/16", "")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.VPC.Id
+	defer s.ec2.DeleteVPC(vpcId)
+
+	subResp, err := s.ec2.CreateSubnet(vpcId, "10.0.0.0/24", "")
+	c.Assert(err, IsNil)
+	subId := subResp.Subnet.Id
+	defer s.ec2.DeleteSubnet(subId)
+
+	g := make([]ec2.SecurityGroup, 5)
 	for i := range g {
-		resp, err := s.ec2.CreateSecurityGroup(sessionName(fmt.Sprintf("testgroup%d", i)), fmt.Sprintf("testdescription%d", i))
+		var resp *ec2.CreateSecurityGroupResp
+		gid := sessionName(fmt.Sprintf("testgroup%d", i))
+		desc := fmt.Sprintf("testdescription%d", i)
+		if i == 0 {
+			// Create the first one as a VPC group.
+			gid += " vpc"
+			desc += " vpc"
+			resp, err = s.ec2.CreateSecurityGroupVPC(vpcId, gid, desc)
+		} else {
+			resp, err = s.ec2.CreateSecurityGroup(gid, desc)
+		}
 		c.Assert(err, IsNil)
 		g[i] = resp.SecurityGroup
 		c.Logf("group %d: %v", i, g[i])
@@ -502,17 +581,17 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			Protocol:     "tcp",
 			FromPort:     200,
 			ToPort:       300,
-			SourceGroups: []ec2.UserSecurityGroup{{Id: g[1].Id}},
+			SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
 		}},
 		{{
 			Protocol:     "udp",
 			FromPort:     200,
 			ToPort:       400,
-			SourceGroups: []ec2.UserSecurityGroup{{Id: g[1].Id}},
+			SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
 		}},
 	}
 	for i, ps := range perms {
-		_, err := s.ec2.AuthorizeSecurityGroup(g[i], ps)
+		_, err := s.ec2.AuthorizeSecurityGroup(g[i+1], ps)
 		c.Assert(err, IsNil)
 	}
 
@@ -542,7 +621,7 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 	tests := []groupTest{
 		{
 			about:      "check that SecurityGroups returns all groups",
-			results:    groups(0, 1, 2, 3),
+			results:    groups(0, 1, 2, 3, 4),
 			allowExtra: true,
 		}, {
 			about:   "check that specifying two group ids returns them",
@@ -550,8 +629,8 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			results: groups(0, 2),
 		}, {
 			about:   "check that specifying names only works",
-			groups:  namesOnly(groups(0, 2)),
-			results: groups(0, 2),
+			groups:  namesOnly(groups(1, 2)),
+			results: groups(1, 2),
 		}, {
 			about:  "check that specifying a non-existent group id gives an error",
 			groups: append(groups(0), ec2.SecurityGroup{Id: "sg-eeeeeeeee"}),
@@ -578,11 +657,12 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		},
 		filterCheck("description", "testdescription1", groups(1)),
 		filterCheck("group-name", g[2].Name, groups(2)),
-		filterCheck("ip-permission.cidr", "1.2.3.4/32", groups(0)),
-		filterCheck("ip-permission.group-name", g[1].Name, groups(1, 2)),
-		filterCheck("ip-permission.protocol", "udp", groups(2)),
-		filterCheck("ip-permission.from-port", "200", groups(1, 2)),
-		filterCheck("ip-permission.to-port", "200", groups(0)),
+		filterCheck("ip-permission.cidr", "1.2.3.4/32", groups(1)),
+		filterCheck("ip-permission.group-name", g[2].Name, groups(2, 3)),
+		filterCheck("ip-permission.protocol", "udp", groups(3)),
+		filterCheck("ip-permission.from-port", "200", groups(2, 3)),
+		filterCheck("ip-permission.to-port", "200", groups(1)),
+		filterCheck("vpc-id", vpcId, groups(0)),
 		// TODO owner-id
 	}
 	for i, t := range tests {

@@ -109,12 +109,18 @@ func (s *ServerTests) TestSubnets(c *C) {
 
 	list, err := s.ec2.Subnets(nil, nil)
 	c.Assert(err, IsNil)
-	c.Assert(list.Subnets, HasLen, 2)
-	if list.Subnets[0].Id != id1 {
-		list.Subnets[0], list.Subnets[1] = list.Subnets[1], list.Subnets[0]
+	// We expect at least 2 subnets in the VPC we just created here,
+	// there might be others in the users account, but we only check
+	// for the ones we just added.
+	c.Check(len(list.Subnets) >= 2, Equals, true)
+	for _, sub := range list.Subnets {
+		switch sub.Id {
+		case id1:
+			assertSubnet(c, sub, id1, vpcId, resp1.Subnet.CIDRBlock)
+		case id2:
+			assertSubnet(c, sub, id2, vpcId, resp2.Subnet.CIDRBlock)
+		}
 	}
-	assertSubnet(c, list.Subnets[0], id1, vpcId, resp1.Subnet.CIDRBlock)
-	assertSubnet(c, list.Subnets[1], id2, vpcId, resp2.Subnet.CIDRBlock)
 
 	list, err = s.ec2.Subnets([]string{id1}, nil)
 	c.Assert(err, IsNil)
