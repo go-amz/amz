@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"launchpad.net/goamz/ec2"
-	"math/rand"
 	"net"
 	"net/http"
 	"net/url"
@@ -56,6 +55,8 @@ type Server struct {
 	reqId                counter
 	reservationId        counter
 	groupId              counter
+	vpcId                counter
+	dhcpOptsId           counter
 	initialInstanceState ec2.InstanceState
 }
 
@@ -194,22 +195,19 @@ func (g *securityGroup) ec2Perms() (perms []ec2.IPPerm) {
 }
 
 type vpc struct {
-	ec2.Vpc
+	ec2.VPC
 }
 
 func (v *vpc) matchAttr(attr, value string) (ok bool, err error) {
 	switch attr {
 	case "cidr":
-		return v.CidrBlock == value, nil
-	case "dhcp-options-id":
-		return v.DhcpOptionsId == value, nil
+		return v.CIDRBlock == value, nil
 	case "state":
 		return v.State == value, nil
 	case "vpc-id":
 		return v.Id == value, nil
-	case "tag", "tag-key", "tag-value":
-		// Not done: tag, tag-key, tag-value.
-		return false, fmt.Errorf("tag, tag-key, and tag-value filters not implemented")
+	case "tag", "tag-key", "tag-value", "dhcp-options-id", "isDefault":
+		return false, fmt.Errorf("%q filter is not implemented", attr)
 	}
 	return false, fmt.Errorf("unknown attribute %q", attr)
 }
@@ -1007,55 +1005,36 @@ func (srv *Server) deleteSecurityGroup(w http.ResponseWriter, req *http.Request,
 	}
 }
 
-// By default, AWS allows 5 VPC per region.
-const vpcPerRegionLimit = 5
-
 func (srv *Server) createVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	cidrBlock := parseCidr(req.Form.Get("CidrBlock"))
+	tenancy := req.Form.Get("InstanceTenancy")
+	if tenancy == "" {
+		tenancy = ec2.DefaultTenancy
+	}
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
-	if len(srv.vpcs) == vpcPerRegionLimit {
-		fatalf(
-			400,
-			"VpcLimitExceeded",
-			"The maximum number of VPCs has been reached.",
-		)
-	}
-	v := &vpc{ec2.Vpc{
-		Id:            generateHexId("vpc-"),
-		State:         "available",
-		CidrBlock:     cidrBlock,
-		DhcpOptionsId: generateHexId("dopt-"),
+	v := &vpc{ec2.VPC{
+		Id:              fmt.Sprintf("vpc-%d", srv.vpcId.next()),
+		State:           ec2.AvailableState,
+		CIDRBlock:       cidrBlock,
+		DHCPOptionsId:   fmt.Sprintf("dopt-%d", srv.dhcpOptsId.next()),
+		InstanceTenancy: tenancy,
 	}}
 	srv.vpcs[v.Id] = v
-	r := &ec2.CreateVpcResp{
+	r := &ec2.CreateVPCResp{
 		RequestId: reqId,
-		Vpc:       v.Vpc,
+		VPC:       v.VPC,
 	}
 	return r
 }
 
 func (srv *Server) deleteVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
-	id := req.Form.Get("VpcId")
-	if id == "" {
-		fatalf(
-			400,
-			"MissingParameter",
-			"The request must contain the parameter vpcId",
-		)
-	}
+	v := srv.vpc(req.Form.Get("VpcId"))
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
-	if _, found := srv.vpcs[id]; !found {
-		fatalf(
-			400,
-			"InvalidVpcID.NotFound",
-			"The vpc ID '"+id+"' does not exist",
-		)
-	}
 
-	delete(srv.vpcs, id)
+	delete(srv.vpcs, v.Id)
 	return &ec2.SimpleResp{
 		XMLName:   xml.Name{"", "DeleteVpcResponse"},
 		RequestId: reqId,
@@ -1066,19 +1045,14 @@ func (srv *Server) describeVpcs(w http.ResponseWriter, req *http.Request, reqId 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	idMap := make(map[string]bool)
-	for name, vals := range req.Form {
-		if strings.HasPrefix(name, "VpcId.") {
-			idMap[vals[0]] = true
-		}
-	}
+	idMap := collectIds(req.Form, "VpcId.")
 	f := newFilter(req.Form)
-	var resp ec2.DescribeVpcsResp
+	var resp ec2.VPCsResp
 	resp.RequestId = reqId
 	for _, v := range srv.vpcs {
 		ok, err := f.ok(v)
 		if ok && (len(idMap) == 0 || idMap[v.Id]) {
-			resp.Vpcs = append(resp.Vpcs, v.Vpc)
+			resp.VPCs = append(resp.VPCs, v.VPC)
 		} else if err != nil {
 			fatalf(400, "InvalidParameterValue", "describe VPCs: %v", err)
 		}
@@ -1097,30 +1071,35 @@ func (r *reservation) hasRunningMachine() bool {
 
 func parseCidr(val string) string {
 	if val == "" {
-		fatalf(
-			400,
-			"MissingParameter",
-			"The request must contain the parameter cidrBlock",
-		)
+		fatalf(400, "MissingParameter", "missing cidrBlock")
 	}
-	if !cidrIpPat.MatchString(val) {
-		fatalf(
-			400,
-			"InvalidParameterValue",
-			"Value ("+val+") for parameter cidrBlock is invalid. "+
-				"This is not a valid CIDR block.",
-		)
-	}
-	parts := cidrIpPat.FindStringSubmatch(val)
-	mask := atoi(parts[1])
-	if mask < 16 || mask > 28 {
-		fatalf(
-			400,
-			"InvalidVpcRange",
-			"The CIDR '"+val+"' is invalid.",
-		)
+	if _, _, err := net.ParseCIDR(val); err != nil {
+		fatalf(400, "InvalidParameterValue", "bad CIDR %q: %v", val, err)
 	}
 	return val
+}
+
+func (srv *Server) vpc(id string) *vpc {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing vpcId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	v, found := srv.vpcs[id]
+	if !found {
+		fatalf(400, "InvalidVpcID.NotFound", "VPC %s not found", id)
+	}
+	return v
+}
+
+func collectIds(form url.Values, prefix string) map[string]bool {
+	idMap := make(map[string]bool)
+	for name, vals := range form {
+		if strings.HasPrefix(name, prefix) {
+			idMap[vals[0]] = true
+		}
+	}
+	return idMap
 }
 
 type counter int
@@ -1129,12 +1108,6 @@ func (c *counter) next() (i int) {
 	i = int(*c)
 	(*c)++
 	return
-}
-
-// generateHexId returns a 32-bit random number, encoded in hex
-// lower-case, optionally adding the given prefix.
-func generateHexId(prefix string) string {
-	return prefix + fmt.Sprintf("%x", rand.Int31())
 }
 
 // atoi is like strconv.Atoi but is fatal if the
