@@ -584,20 +584,21 @@ var StopInstancesExample = `
 // http://goo.gl/baoUf
 var RebootInstancesExample = `
 <RebootInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <return>true</return>
 </RebootInstancesResponse>
 `
 
 // http://goo.gl/nkwjv
 var CreateVpcExample = `
-<CreateVpcResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<CreateVpcResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
    <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
    <vpc>
       <vpcId>vpc-1a2b3c4d</vpcId>
       <state>pending</state>
       <cidrBlock>10.0.0.0/16</cidrBlock>
       <dhcpOptionsId>dopt-1a2b3c4d2</dhcpOptionsId>
+      <instanceTenancy>default</instanceTenancy>
       <tagSet/>
    </vpc>
 </CreateVpcResponse>
@@ -605,7 +606,7 @@ var CreateVpcExample = `
 
 // http://goo.gl/bcxtbf
 var DeleteVpcExample = `
-<DeleteVpcResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DeleteVpcResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
    <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
    <return>true</return>
 </DeleteVpcResponse>
@@ -613,7 +614,7 @@ var DeleteVpcExample = `
 
 // http://goo.gl/Y5kHqG
 var DescribeVpcsExample = `
-<DescribeVpcsResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DescribeVpcsResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <vpcSet>
     <item>
@@ -621,6 +622,8 @@ var DescribeVpcsExample = `
       <state>available</state>
       <cidrBlock>10.0.0.0/23</cidrBlock>
       <dhcpOptionsId>dopt-7a8b9c2d</dhcpOptionsId>
+      <instanceTenancy>default</instanceTenancy>
+      <isDefault>false</isDefault>
       <tagSet/>
     </item>
   </vpcSet>
@@ -629,7 +632,7 @@ var DescribeVpcsExample = `
 
 // http://goo.gl/wLPhf
 var CreateSubnetExample = `
-<CreateSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<CreateSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <subnet>
     <subnetId>subnet-9d4a7b6c</subnetId>
@@ -645,7 +648,7 @@ var CreateSubnetExample = `
 
 // http://goo.gl/KmhcBM
 var DeleteSubnetExample = `
-<DeleteSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DeleteSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
    <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
    <return>true</return>
 </DeleteSubnetResponse>
@@ -653,7 +656,7 @@ var DeleteSubnetExample = `
 
 // http://goo.gl/NTKQVI
 var DescribeSubnetsExample = `
-<DescribeSubnetsResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DescribeSubnetsResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <subnetSet>
     <item>
@@ -663,6 +666,8 @@ var DescribeSubnetsExample = `
       <cidrBlock>10.0.1.0/24</cidrBlock>
       <availableIpAddressCount>251</availableIpAddressCount>
       <availabilityZone>us-east-1a</availabilityZone>
+      <defaultForAz>false</defaultForAz>
+      <mapPublicIpOnLaunch>false</mapPublicIpOnLaunch>
       <tagSet/>
     </item>
     <item>
@@ -672,6 +677,8 @@ var DescribeSubnetsExample = `
       <cidrBlock>10.0.0.0/24</cidrBlock>
       <availableIpAddressCount>251</availableIpAddressCount>
       <availabilityZone>us-east-1a</availabilityZone>
+      <defaultForAz>false</defaultForAz>
+      <mapPublicIpOnLaunch>false</mapPublicIpOnLaunch>
       <tagSet/>
     </item>
   </subnetSet>
@@ -680,7 +687,7 @@ var DescribeSubnetsExample = `
 
 // http://goo.gl/ze3VhA
 var CreateNetworkInterfaceExample = `
-<CreateNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<CreateNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
  <requestId>8dbe591e-5a22-48cb-b948-dd0aadd55adf</requestId>
     <networkInterface>
         <networkInterfaceId>eni-cfca76a6</networkInterfaceId>
@@ -701,13 +708,19 @@ var CreateNetworkInterfaceExample = `
             </item>
         </groupSet>
         <tagSet/>
+        <privateIpAddressesSet>
+            <item>
+                <privateIpAddress>10.0.2.157</privateIpAddress>
+                <primary>true</primary>
+            </item>
+        </privateIpAddressesSet>
     </networkInterface>
 </CreateNetworkInterfaceResponse>
 `
 
 // http://goo.gl/MC1yOj
 var DeleteNetworkInterfaceExample = `
-<DeleteNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DeleteNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
     <requestId>e1c6d73b-edaa-4e62-9909-6611404e1739</requestId>
     <return>true</return>
 </DeleteNetworkInterfaceResponse>
@@ -715,7 +728,7 @@ var DeleteNetworkInterfaceExample = `
 
 // http://goo.gl/2LcXtM
 var DescribeNetworkInterfacesExample = `
-<DescribeNetworkInterfacesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DescribeNetworkInterfacesResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
     <requestId>fc45294c-006b-457b-bab9-012f5b3b0e40</requestId>
      <networkInterfaceSet>
        <item>
@@ -746,6 +759,20 @@ var DescribeNetworkInterfacesExample = `
            <deleteOnTermination>true</deleteOnTermination>
          </attachment>
          <tagSet/>
+         <privateIpAddressesSet>
+           <item>
+             <privateIpAddress>10.0.0.146</privateIpAddress>
+             <primary>true</primary>
+           </item>
+           <item>
+             <privateIpAddress>10.0.0.148</privateIpAddress>
+             <primary>false</primary>
+           </item>
+           <item>
+             <privateIpAddress>10.0.0.150</privateIpAddress>
+             <primary>false</primary>
+           </item>
+         </privateIpAddressesSet>
        </item>
        <item>
          <networkInterfaceId>eni-a66ed5cf</networkInterfaceId>
@@ -775,6 +802,16 @@ var DescribeNetworkInterfacesExample = `
            <deleteOnTermination>true</deleteOnTermination>
          </attachment>
          <tagSet/>
+         <privateIpAddressesSet>
+           <item>
+             <privateIpAddress>10.0.1.233</privateIpAddress>
+             <primary>true</primary>
+           </item>
+           <item>
+             <privateIpAddress>10.0.1.20</privateIpAddress>
+             <primary>false</primary>
+           </item>
+         </privateIpAddressesSet>
        </item>
      </networkInterfaceSet>
 </DescribeNetworkInterfacesResponse>
@@ -782,7 +819,7 @@ var DescribeNetworkInterfacesExample = `
 
 // http://goo.gl/rEbSii
 var AttachNetworkInterfaceExample = `
-<AttachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<AttachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
     <requestId>ace8cd1e-e685-4e44-90fb-92014d907212</requestId>
     <attachmentId>eni-attach-d94b09b0</attachmentId>
 </AttachNetworkInterfaceResponse>
@@ -790,7 +827,7 @@ var AttachNetworkInterfaceExample = `
 
 // http://goo.gl/0Xc1px
 var DetachNetworkInterfaceExample = `
-<DetachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DetachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
     <requestId>ce540707-0635-46bc-97da-33a8a362a0e8</requestId>
     <return>true</return>
 </DetachNetworkInterfaceResponse>

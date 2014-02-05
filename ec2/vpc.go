@@ -14,36 +14,61 @@ import (
 	"strconv"
 )
 
-// Vpc describes an Amazon Virtual Private Cloud (VPC).
+const (
+	// Supported values for VPC state.
+	PendingState   = "pending"
+	AvailableState = "available"
+
+	// Supported values for InstanceTenancy.
+	DefaultTenancy   = "default"
+	DedicatedTenancy = "dedicated"
+
+	// AWS API version used for VPC-related calls.
+	VPCAPIVersion = "2013-10-15"
+)
+
+// VPC describes an Amazon Virtual Private Cloud (VPC).
 //
 // See http://goo.gl/Uy6ZLL for more details.
-type Vpc struct {
-	Id            string `xml:"vpcId"`
-	State         string `xml:"state"`
-	CidrBlock     string `xml:"cidrBlock"`
-	DhcpOptionsId string `xml:"dhcpOptionsId"`
-	Tags          []Tag  `xml:"tagSet>item"`
+type VPC struct {
+	Id              string `xml:"vpcId"`
+	State           string `xml:"state"`
+	CIDRBlock       string `xml:"cidrBlock"`
+	DHCPOptionsId   string `xml:"dhcpOptionsId"`
+	Tags            []Tag  `xml:"tagSet>item"`
+	InstanceTenancy string `xml:"instanceTenancy"`
+	IsDefault       bool   `xml:"isDefault"`
 }
 
-// CreateVpcResp is the response to a CreateVpc request.
+// CreateVPCResp is the response to a CreateVPC request.
 //
 // See http://goo.gl/nkwjvN for more details.
-type CreateVpcResp struct {
+type CreateVPCResp struct {
 	RequestId string `xml:"requestId"`
-	Vpc       Vpc    `xml:"vpc"`
+	VPC       VPC    `xml:"vpc"`
 }
 
-// CreateVpc creates a VPC with the specified CIDR block.
+// CreateVPC creates a VPC with the specified CIDR block.
 //
 // The smallest VPC you can create uses a /28 netmask (16 IP
 // addresses), and the largest uses a /16 netmask (65,536 IP
 // addresses).
 //
+// The supported tenancy options for instances launched into the
+// VPC. A value of DefaultTenancy means that instances can be launched
+// with any tenancy; a value of DedicatedTenancy means all instances
+// launched into the VPC are launched as dedicated tenancy instances
+// regardless of the tenancy assigned to the instance at
+// launch. Dedicated tenancy instances runs on single-tenant hardware.
+//
 // See http://goo.gl/nkwjvN for more details.
-func (ec2 *EC2) CreateVpc(cidrBlock string) (resp *CreateVpcResp, err error) {
-	params := makeParams("CreateVpc")
-	params["CidrBlock"] = cidrBlock
-	resp = &CreateVpcResp{}
+func (ec2 *EC2) CreateVPC(CIDRBlock, instanceTenancy string) (resp *CreateVPCResp, err error) {
+	params := makeParamsVPC("CreateVpc")
+	params["CidrBlock"] = CIDRBlock
+	if instanceTenancy != "" {
+		params["InstanceTenancy"] = instanceTenancy
+	}
+	resp = &CreateVPCResp{}
 	err = ec2.query(params, resp)
 	if err != nil {
 		return nil, err
@@ -51,7 +76,7 @@ func (ec2 *EC2) CreateVpc(cidrBlock string) (resp *CreateVpcResp, err error) {
 	return resp, nil
 }
 
-// DeleteVpc deletes the specified VPC. You must detach or delete all
+// DeleteVPC deletes the specified VPC. You must detach or delete all
 // gateways and resources that are associated with the VPC before you
 // can delete it. For example, you must terminate all instances
 // running in the VPC, delete all security groups associated with the
@@ -59,8 +84,8 @@ func (ec2 *EC2) CreateVpc(cidrBlock string) (resp *CreateVpcResp, err error) {
 // with the VPC (except the default one), and so on.
 //
 // See http://goo.gl/bcxtbf for more details.
-func (ec2 *EC2) DeleteVpc(id string) (resp *SimpleResp, err error) {
-	params := makeParams("DeleteVpc")
+func (ec2 *EC2) DeleteVPC(id string) (resp *SimpleResp, err error) {
+	params := makeParamsVPC("DeleteVpc")
 	params["VpcId"] = id
 	resp = &SimpleResp{}
 	err = ec2.query(params, resp)
@@ -70,27 +95,27 @@ func (ec2 *EC2) DeleteVpc(id string) (resp *SimpleResp, err error) {
 	return resp, nil
 }
 
-// DescribeVpcsResp is the response to a DescribeVpcs request.
+// VPCsResp is the response to a VPCs request.
 //
 // See http://goo.gl/Y5kHqG for more details.
-type DescribeVpcsResp struct {
+type VPCsResp struct {
 	RequestId string `xml:"requestId"`
-	Vpcs      []Vpc  `xml:"vpcSet>item"`
+	VPCs      []VPC  `xml:"vpcSet>item"`
 }
 
-// DescribeVpcs describes one or more VPCs. Both parameters are
-// optional, and if specified will limit the returned VPCs to the
-// matching ids or filtering rules.
+// VPCs describes one or more VPCs. Both parameters are optional, and
+// if specified will limit the returned VPCs to the matching ids or
+// filtering rules.
 //
 // See http://goo.gl/Y5kHqG for more details.
-func (ec2 *EC2) DescribeVpcs(ids []string, filter *Filter) (resp *DescribeVpcsResp, err error) {
-	params := makeParams("DescribeVpcs")
+func (ec2 *EC2) VPCs(ids []string, filter *Filter) (resp *VPCsResp, err error) {
+	params := makeParamsVPC("DescribeVpcs")
 	for i, id := range ids {
 		params["VpcId."+strconv.Itoa(i+1)] = id
 	}
 	filter.addParams(params)
 
-	resp = &DescribeVpcsResp{}
+	resp = &VPCsResp{}
 	err = ec2.query(params, resp)
 	if err != nil {
 		return nil, err

@@ -119,7 +119,9 @@ type xmlErrors struct {
 var timeNow = time.Now
 
 func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
-	params["Version"] = "2011-12-15"
+	if params["Version"] == "" {
+		params["Version"] = "2011-12-15"
+	}
 	params["Timestamp"] = timeNow().In(time.UTC).Format(time.RFC3339)
 	endpoint, err := url.Parse(ec2.Region.EC2Endpoint)
 	if err != nil {
@@ -175,8 +177,17 @@ func buildError(r *http.Response) error {
 }
 
 func makeParams(action string) map[string]string {
+	return makeParamsForVersion("2011-12-15", action)
+}
+
+func makeParamsVPC(action string) map[string]string {
+	return makeParamsForVersion(VPCAPIVersion, action)
+}
+
+func makeParamsForVersion(version, action string) map[string]string {
 	params := make(map[string]string)
 	params["Action"] = action
+	params["Version"] = version
 	return params
 }
 
@@ -621,8 +632,8 @@ type CreateSecurityGroupResp struct {
 	RequestId string `xml:"requestId"`
 }
 
-// CreateSecurityGroup run a CreateSecurityGroup request in EC2, with the provided
-// name and description.
+// CreateSecurityGroup run a CreateSecurityGroup request in EC2, with
+// the provided name and description.
 //
 // See http://goo.gl/Eo7Yl for more details.
 func (ec2 *EC2) CreateSecurityGroup(name, description string) (resp *CreateSecurityGroupResp, err error) {
@@ -634,7 +645,7 @@ func (ec2 *EC2) CreateSecurityGroup(name, description string) (resp *CreateSecur
 //
 // See http://goo.gl/Eo7Yl for more details.
 func (ec2 *EC2) CreateSecurityGroupVPC(vpcId, name, description string) (resp *CreateSecurityGroupResp, err error) {
-	params := makeParams("CreateSecurityGroup")
+	params := makeParamsVPC("CreateSecurityGroup")
 	params["GroupName"] = name
 	params["GroupDescription"] = description
 	if vpcId != "" {
@@ -664,7 +675,7 @@ type SecurityGroupsResp struct {
 // See http://goo.gl/CIdyP for more details.
 type SecurityGroupInfo struct {
 	SecurityGroup
-	VpcId       string   `xml:"vpcId"`
+	VPCId       string   `xml:"vpcId"`
 	OwnerId     string   `xml:"ownerId"`
 	Description string   `xml:"groupDescription"`
 	IPPerms     []IPPerm `xml:"ipPermissions>item"`

@@ -18,13 +18,15 @@ import (
 //
 // See http://goo.gl/CdkvO2 for more details.
 type Subnet struct {
-	Id                      string `xml:"subnetId"`
-	State                   string `xml:"state"`
-	VpcId                   string `xml:"vpcId"`
-	CidrBlock               string `xml:"cidrBlock"`
-	AvailableIPAddressCount int    `xml:"availableIpAddressCount"`
-	AvailZone               string `xml:"availabilityZone"`
-	Tags                    []Tag  `xml:"tagSet>item"`
+	Id                  string `xml:"subnetId"`
+	State               string `xml:"state"`
+	VPCId               string `xml:"vpcId"`
+	CIDRBlock           string `xml:"cidrBlock"`
+	AvailableIPCount    int    `xml:"availableIpAddressCount"`
+	AvailZone           string `xml:"availabilityZone"`
+	DefaultForAZ        bool   `xml:"defaultForAz"`
+	MapPublicIPOnLaunch bool   `xml:"mapPublicIpOnLaunch"`
+	Tags                []Tag  `xml:"tagSet>item"`
 }
 
 // CreateSubnetResp is the response to a CreateSubnet request.
@@ -52,7 +54,7 @@ type CreateSubnetResp struct {
 //
 // See http://goo.gl/wLPhfI for more details.
 func (ec2 *EC2) CreateSubnet(vpcId, cidrBlock, availZone string) (resp *CreateSubnetResp, err error) {
-	params := makeParams("CreateSubnet")
+	params := makeParamsVPC("CreateSubnet")
 	params["VpcId"] = vpcId
 	params["CidrBlock"] = cidrBlock
 	if availZone != "" {
@@ -67,11 +69,11 @@ func (ec2 *EC2) CreateSubnet(vpcId, cidrBlock, availZone string) (resp *CreateSu
 }
 
 // DeleteSubnet deletes the specified subnet. You must terminate all
-// running instances in the subnet before you can delete the subnet..
+// running instances in the subnet before you can delete the subnet.
 //
 // See http://goo.gl/KmhcBM for more details.
 func (ec2 *EC2) DeleteSubnet(id string) (resp *SimpleResp, err error) {
-	params := makeParams("DeleteSubnet")
+	params := makeParamsVPC("DeleteSubnet")
 	params["SubnetId"] = id
 	resp = &SimpleResp{}
 	err = ec2.query(params, resp)
@@ -81,27 +83,27 @@ func (ec2 *EC2) DeleteSubnet(id string) (resp *SimpleResp, err error) {
 	return resp, nil
 }
 
-// DescribeSubnetsResp is the response to a DescribeSubnets request.
+// SubnetsResp is the response to a Subnets request.
 //
 // See http://goo.gl/NTKQVI for more details.
-type DescribeSubnetsResp struct {
+type SubnetsResp struct {
 	RequestId string   `xml:"requestId"`
 	Subnets   []Subnet `xml:"subnetSet>item"`
 }
 
-// DescribeSubnets Describes one or more of your subnets. Both
-// parameters are optional, and if specified will limit the returned
-// subnets to the matching ids or filtering rules.
+// Subnets describes one or more of your subnets. Both parameters are
+// optional, and if specified will limit the returned subnets to the
+// matching ids or filtering rules.
 //
 // See http://goo.gl/NTKQVI for more details.
-func (ec2 *EC2) DescribeSubnets(ids []string, filter *Filter) (resp *DescribeSubnetsResp, err error) {
-	params := makeParams("DescribeSubnets")
+func (ec2 *EC2) Subnets(ids []string, filter *Filter) (resp *SubnetsResp, err error) {
+	params := makeParamsVPC("DescribeSubnets")
 	for i, id := range ids {
 		params["SubnetId."+strconv.Itoa(i+1)] = id
 	}
 	filter.addParams(params)
 
-	resp = &DescribeSubnetsResp{}
+	resp = &SubnetsResp{}
 	err = ec2.query(params, resp)
 	if err != nil {
 		return nil, err
