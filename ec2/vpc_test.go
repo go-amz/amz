@@ -11,8 +11,10 @@
 package ec2_test
 
 import (
+	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	. "launchpad.net/gocheck"
+	"time"
 )
 
 // VPC tests with example responses
@@ -74,7 +76,7 @@ func (s *S) TestVPCsExample(c *C) {
 	c.Check(vpc.InstanceTenancy, Equals, ec2.DefaultTenancy)
 }
 
-// VPC tests run against either a local test server or live on EC2.
+// VPC tests to run against either a local test server or live on EC2.
 
 func (s *ServerTests) TestVPCs(c *C) {
 	resp1, err := s.ec2.CreateVPC("10.0.0.0/16", "")
@@ -82,23 +84,51 @@ func (s *ServerTests) TestVPCs(c *C) {
 	assertVPC(c, resp1.VPC, "", "10.0.0.0/16")
 	id1 := resp1.VPC.Id
 
-	resp2, err := s.ec2.CreateVPC("1.2.0.0/18", ec2.DefaultTenancy)
+	resp2, err := s.ec2.CreateVPC("10.1.0.0/16", ec2.DefaultTenancy)
 	c.Assert(err, IsNil)
-	assertVPC(c, resp2.VPC, "", "1.2.0.0/18")
+	assertVPC(c, resp2.VPC, "", "10.1.0.0/16")
 	id2 := resp2.VPC.Id
 
-	list, err := s.ec2.VPCs(nil, nil)
-	c.Assert(err, IsNil)
-	// We expect at least 2 VPCs here, there might be others in the
-	// users account, but we only check for the ones we just added.
-	c.Check(len(list.VPCs) >= 2, Equals, true)
-	for _, vpc := range list.VPCs {
-		switch vpc.Id {
-		case id1:
-			assertVPC(c, vpc, id1, resp1.VPC.CIDRBlock)
-		case id2:
-			assertVPC(c, vpc, id2, resp2.VPC.CIDRBlock)
+	// We only check for the VPCs we just created, because the user
+	// might have others in his account (when testing against the EC2
+	// servers). In some cases it takes a short while until both VPCs
+	// are created, so we need to retry a few times to make sure.
+	var list *ec2.VPCsResp
+	done := false
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for %v to be created", []string{id1, id2})
+		list, err = s.ec2.VPCs(nil, nil)
+		if err != nil {
+			c.Logf("retrying; VPCs returned: %v", err)
+			continue
 		}
+		found := 0
+		for _, vpc := range list.VPCs {
+			c.Logf("found VPC %v", vpc)
+			switch vpc.Id {
+			case id1:
+				assertVPC(c, vpc, id1, resp1.VPC.CIDRBlock)
+				found++
+			case id2:
+				assertVPC(c, vpc, id2, resp2.VPC.CIDRBlock)
+				found++
+			}
+			if found == 2 {
+				done = true
+				break
+			}
+		}
+		if done {
+			c.Logf("all VPCs were created")
+			break
+		}
+	}
+	if !done {
+		c.Fatalf("timeout while waiting for VPCs %v", []string{id1, id2})
 	}
 
 	list, err = s.ec2.VPCs([]string{id1}, nil)
@@ -117,6 +147,36 @@ func (s *ServerTests) TestVPCs(c *C) {
 	c.Assert(err, IsNil)
 	_, err = s.ec2.DeleteVPC(id2)
 	c.Assert(err, IsNil)
+}
+
+// deleteVPCs ensures the given VPCs are deleted, by retrying until a
+// timeout or all VPC cannot be found anymore.  This should be used to
+// make sure tests leave no VPCs around.
+func (s *ServerTests) deleteVPCs(c *C, ids []string) {
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		deleted := 0
+		c.Logf("deleting VPCs %v", ids)
+		for _, id := range ids {
+			_, err := s.ec2.DeleteVPC(id)
+			if err == nil || s.errorCode(err, "InvalidVpcID.NotFound") {
+				c.Logf("VPC %s deleted", id)
+				deleted++
+				continue
+			}
+			if err != nil {
+				c.Logf("retrying; DeleteVPC returned: %v", err)
+			}
+		}
+		if deleted == len(ids) {
+			c.Logf("all VPCs deleted")
+			return
+		}
+	}
+	c.Fatalf("timeout while waiting %v VPCs to get deleted!", ids)
 }
 
 func assertVPC(c *C, obtained ec2.VPC, expectId, expectCidr string) {
