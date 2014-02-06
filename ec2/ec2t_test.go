@@ -5,6 +5,7 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"time"
 
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
@@ -161,10 +162,8 @@ func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup 
 
 func (s *ServerTests) TestIPPerms(c *C) {
 	g0 := s.makeTestGroup(c, "goamz-test0", "ec2test group 0")
-	defer s.ec2.DeleteSecurityGroup(g0)
-
 	g1 := s.makeTestGroup(c, "goamz-test1", "ec2test group 1")
-	defer s.ec2.DeleteSecurityGroup(g1)
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
 
 	resp, err := s.ec2.SecurityGroups([]ec2.SecurityGroup{g0, g1}, nil)
 	c.Assert(err, IsNil)
@@ -313,12 +312,12 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 	groupResp, err := s.ec2.CreateSecurityGroup(sessionName("testgroup1"), "testgroup one description")
 	c.Assert(err, IsNil)
 	group1 := groupResp.SecurityGroup
-	defer s.ec2.DeleteSecurityGroup(group1)
 
 	groupResp, err = s.ec2.CreateSecurityGroup(sessionName("testgroup2"), "testgroup two description")
 	c.Assert(err, IsNil)
 	group2 := groupResp.SecurityGroup
-	defer s.ec2.DeleteSecurityGroup(group2)
+
+	defer s.deleteGroups(c, []ec2.SecurityGroup{group1, group2})
 
 	insts := make([]*ec2.Instance, 3)
 	inst, err := s.ec2.RunInstances(&ec2.RunInstances{
@@ -484,8 +483,8 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		c.Assert(err, IsNil)
 		g[i] = resp.SecurityGroup
 		c.Logf("group %d: %v", i, g[i])
-		defer s.ec2.DeleteSecurityGroup(g[i])
 	}
+	defer s.deleteGroups(c, g)
 
 	perms := [][]ec2.IPPerm{
 		{{
@@ -620,4 +619,46 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			c.Check(rg.Name, Equals, g.Name, Commentf("group %d (%v)", j, g))
 		}
 	}
+}
+
+// deleteGroups ensures the given groups are deleted, by retrying
+// until a timeout or all groups cannot be found anymore.
+// This should be used to make sure tests leave no groups around.
+func (s *ServerTests) deleteGroups(c *C, groups []ec2.SecurityGroup) {
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		deleted := 0
+		c.Logf("deleting groups %v", groups)
+		for _, group := range groups {
+			_, err := s.ec2.DeleteSecurityGroup(group)
+			if err == nil || s.errorCode(err, "InvalidGroup.NotFound") {
+				c.Logf("group %v deleted", group)
+				deleted++
+				continue
+			}
+			if err != nil {
+				c.Logf("retrying; DeleteSecurityGroup returned: %v", err)
+			}
+		}
+		if deleted == len(groups) {
+			c.Logf("all groups deleted")
+			return
+		}
+	}
+	c.Fatalf("timeout while waiting %v groups to get deleted!", groups)
+}
+
+// errorCode returns whether the given error is not nil and matches
+// the given ec2.Error code.
+func (s *ServerTests) errorCode(err error, code string) bool {
+	if err == nil {
+		return false
+	}
+	if err1, ok := err.(*ec2.Error); ok {
+		return err1.Code == code
+	}
+	return false
 }
