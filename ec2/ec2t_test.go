@@ -138,7 +138,7 @@ type ServerTests struct {
 
 func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	_, err := e.TerminateInstances(ids)
-	c.Check(err, IsNil, Commentf("%d INSTANCES LEFT RUNNING!!!", len(ids)))
+	c.Assert(err, IsNil, Commentf("%d INSTANCES LEFT RUNNING!!!", ids))
 	// We need to wait until the instances are really off, because
 	// entities that depend on them won't be deleted (i.e. groups,
 	// NICs, subnets, etc.)
@@ -160,16 +160,12 @@ func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 		}
 		for _, r := range resp.Reservations {
 			for _, inst := range r.Instances {
-				if idsLeft[inst.InstanceId] {
-					idsLeft[inst.InstanceId] = false
-				}
+				delete(idsLeft, inst.InstanceId)
 			}
 		}
 		ids = []string{}
-		for id, left := range idsLeft {
-			if left {
-				ids = append(ids, id)
-			}
+		for id, _ := range idsLeft {
+			ids = append(ids, id)
 		}
 		if len(ids) == 0 {
 			c.Logf("all instances terminated.")
@@ -649,11 +645,11 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		g[i] = resp.SecurityGroup
 		c.Logf("group %d: %v", i, g[i])
 	}
-	// Reorder the groups below, so that g[3] is deleted first (the
-	// some of the reset depend on it, so they can't be deleted before
-	// g[3]). A slight optimization for local live tests, so that we
-	// don't need to wait 5s each time deleteGroups runs.
-	defer s.deleteGroups(c, []ec2.SecurityGroup{g[0], g[3], g[1], g[2], g[4]})
+	// Reorder the groups below, so that g[3] is first (some of the
+	// reset depend on it, so they can't be deleted before g[3]). A
+	// slight optimization for local live tests, so that we don't need
+	// to wait 5s each time deleteGroups runs.
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g[3], g[0], g[1], g[2], g[4]})
 
 	perms := [][]ec2.IPPerm{
 		{{
