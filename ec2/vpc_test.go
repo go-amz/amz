@@ -79,14 +79,14 @@ func (s *S) TestVPCsExample(c *C) {
 // VPC tests to run against either a local test server or live on EC2.
 
 func (s *ServerTests) TestVPCs(c *C) {
-	resp1, err := s.ec2.CreateVPC("10.0.0.0/24", "")
+	resp1, err := s.ec2.CreateVPC("10.0.0.0/16", "")
 	c.Assert(err, IsNil)
-	assertVPC(c, resp1.VPC, "", "10.0.0.0/24")
+	assertVPC(c, resp1.VPC, "", "10.0.0.0/16")
 	id1 := resp1.VPC.Id
 
-	resp2, err := s.ec2.CreateVPC("10.1.0.0/24", ec2.DefaultTenancy)
+	resp2, err := s.ec2.CreateVPC("10.1.0.0/16", ec2.DefaultTenancy)
 	c.Assert(err, IsNil)
-	assertVPC(c, resp2.VPC, "", "10.1.0.0/24")
+	assertVPC(c, resp2.VPC, "", "10.1.0.0/16")
 	id2 := resp2.VPC.Id
 
 	// We only check for the VPCs we just created, because the user
