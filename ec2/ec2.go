@@ -206,17 +206,22 @@ func addParamsList(params map[string]string, label string, ids []string) {
 //
 // The following fields are required when creating a new network
 // interface (i.e. Id is empty): DeviceIndex, SubnetId, Description
-// (only used if set), PrivateIPAddress (if empty an automatic IP will
-// be assigned by AWS from the subnet), SecurityGroupIds.
+// (only used if set), SecurityGroupIds.
 //
-// PrivateIPs can be used instead of PrivateIPAddress to specify more
-// than one IP to assign, but only one can be set as primary.
+// PrivateIPs can be used to add one or more private IP addresses to a
+// network interface. Only one of the IP addresses can be set as
+// primary. If none are given, EC2 selects a primary IP for each
+// created interface from the subnet pool.
+//
+// When SecondaryPrivateIPsCount is non-zero, EC2 allocates that
+// number of IP addresses from within the subnet range and sets them
+// as secondary IPs. The number of IP addresses you can assign to a
+// network interface varies by instance type.
 type NetworkInterfaceSpec struct {
 	Id                       string
 	DeviceIndex              int
 	SubnetId                 string
 	Description              string
-	PrivateIPAddress         string
 	PrivateIPs               []PrivateIP
 	SecurityGroupIds         []string
 	DeleteOnTermination      bool
@@ -365,9 +370,6 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		}
 		if ni.Description != "" {
 			params[prefix+".Description"] = ni.Description
-		}
-		if ni.PrivateIPAddress != "" {
-			params[prefix+".PrivateIpAddress"] = ni.PrivateIPAddress
 		}
 		for j, gid := range ni.SecurityGroupIds {
 			k := strconv.Itoa(j + 1)

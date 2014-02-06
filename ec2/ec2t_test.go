@@ -176,7 +176,7 @@ func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 			return
 		}
 	}
-	c.Fatalf("%d INSTANCES LEFT RUNNING!!!", len(ids))
+	c.Fatalf("%v INSTANCES LEFT RUNNING!!!", ids)
 }
 
 func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup {
@@ -345,15 +345,14 @@ type filterSpec struct {
 }
 
 func (s *ServerTests) TestInstanceFiltering(c *C) {
-	vpcResp, err := s.ec2.CreateVPC("10.0.0.0/16", "")
+	vpcResp, err := s.ec2.CreateVPC("10.4.0.0/16", "")
 	c.Assert(err, IsNil)
 	vpcId := vpcResp.VPC.Id
-	defer s.ec2.DeleteVPC(vpcId)
+	defer s.deleteVPCs(c, []string{vpcId})
 
-	subResp, err := s.ec2.CreateSubnet(vpcId, "10.0.0.0/24", "")
-	c.Assert(err, IsNil)
+	subResp := s.createSubnet(c, vpcId, "10.4.1.0/24", "")
 	subId := subResp.Subnet.Id
-	defer s.ec2.DeleteSubnet(subId)
+	defer s.deleteSubnets(c, []string{subId})
 
 	groupResp, err := s.ec2.CreateSecurityGroup(
 		sessionName("testgroup1"),
@@ -539,15 +538,14 @@ func namesOnly(gs []ec2.SecurityGroup) []ec2.SecurityGroup {
 }
 
 func (s *ServerTests) TestGroupFiltering(c *C) {
-	vpcResp, err := s.ec2.CreateVPC("10.0.0.0/16", "")
+	vpcResp, err := s.ec2.CreateVPC("10.5.0.0/16", "")
 	c.Assert(err, IsNil)
 	vpcId := vpcResp.VPC.Id
-	defer s.ec2.DeleteVPC(vpcId)
+	defer s.deleteVPCs(c, []string{vpcId})
 
-	subResp, err := s.ec2.CreateSubnet(vpcId, "10.0.0.0/24", "")
-	c.Assert(err, IsNil)
+	subResp := s.createSubnet(c, vpcId, "10.5.1.0/24", "")
 	subId := subResp.Subnet.Id
-	defer s.ec2.DeleteSubnet(subId)
+	defer s.deleteSubnets(c, []string{subId})
 
 	g := make([]ec2.SecurityGroup, 5)
 	for i := range g {
