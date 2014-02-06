@@ -295,14 +295,6 @@ type Instance struct {
 // will be started; otherwise if options.MaxCount is zero, options.MinCount
 // will be used instead.
 //
-// If SubnetId field in options is set, or any NetworkInterfaces are
-// given, a VPC-enabled instances will be started.  Cannot specify
-// both a SubnetId for the instances and SubnetId for any network
-// interface. When giving network interfaces set SubnetId just there.
-// Similarly, SecurityGroups cannot be specified if there are also
-// NetworkInterfaces specified. Use SecurityGroupIds in
-// NetworkInterfaces instead.
-//
 // See http://goo.gl/Mcm3b for more details.
 func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err error) {
 	var params map[string]string
