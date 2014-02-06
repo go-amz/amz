@@ -523,6 +523,91 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 	}
 }
 
+func (s *AmazonServerSuite) TestRunInstancesVPC(c *C) {
+	vpcResp, err := s.ec2.CreateVPC("10.6.0.0/16", "")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.VPC.Id
+	defer s.deleteVPCs(c, []string{vpcId})
+
+	subResp := s.createSubnet(c, vpcId, "10.6.1.0/24", "")
+	subId := subResp.Subnet.Id
+	defer s.deleteSubnets(c, []string{subId})
+
+	groupResp, err := s.ec2.CreateSecurityGroupVPC(
+		vpcId,
+		sessionName("testgroup1 vpc"),
+		"testgroup description vpc",
+	)
+	c.Assert(err, IsNil)
+	group := groupResp.SecurityGroup
+
+	defer s.deleteGroups(c, []ec2.SecurityGroup{group})
+
+	// Run a single instance with a new network interface.
+	ips := []ec2.PrivateIP{
+		{Address: "10.6.1.10", IsPrimary: true},
+		{Address: "10.6.1.20", IsPrimary: false},
+	}
+	instResp, err := s.ec2.RunInstances(&ec2.RunInstances{
+		MinCount:     1,
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		NetworkInterfaces: []ec2.NetworkInterfaceSpec{{
+			DeviceIndex:         0,
+			SubnetId:            subId,
+			PrivateIPs:          ips,
+			SecurityGroupIds:    []string{group.Id},
+			DeleteOnTermination: true,
+		}},
+	})
+	c.Assert(err, IsNil)
+	inst := &instResp.Instances[0]
+
+	defer terminateInstances(c, s.ec2, []string{inst.InstanceId})
+
+	// Now list the network interfaces and find ours.
+	testAttempt := aws.AttemptStrategy{
+		Total: 5 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	f := ec2.NewFilter()
+	f.Add("subnet-id", subId)
+	var newNIC *ec2.NetworkInterface
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for NIC to become available")
+		listNICs, err := s.ec2.NetworkInterfaces(nil, f)
+		if err != nil {
+			c.Logf("retrying; NetworkInterfaces returned: %v", err)
+			continue
+		}
+		for _, iface := range listNICs.Interfaces {
+			c.Logf("found NIC %v", iface)
+			if iface.Attachment.InstanceId == inst.InstanceId {
+				c.Logf("instance %v new NIC appeared", inst.InstanceId)
+				newNIC = &iface
+				break
+			}
+		}
+		if newNIC != nil {
+			break
+		}
+	}
+	if newNIC == nil {
+		c.Fatalf("timeout while waiting for NIC to appear.")
+	}
+	c.Check(newNIC.Id, Matches, `^eni-[0-9a-f]+$`)
+	c.Check(newNIC.SubnetId, Equals, subId)
+	c.Check(newNIC.VPCId, Equals, vpcId)
+	c.Check(newNIC.Status, Matches, `^(attaching|in-use)$`)
+	c.Check(newNIC.PrivateIPAddress, Equals, ips[0].Address)
+	c.Check(newNIC.PrivateIPs, DeepEquals, ips)
+	c.Check(newNIC.Groups, HasLen, 1)
+	c.Check(newNIC.Groups[0].Id, Equals, group.Id)
+	c.Check(newNIC.Attachment.Status, Matches, `^(attaching|attached)$`)
+	c.Check(newNIC.Attachment.DeviceIndex, Equals, 0)
+	c.Check(newNIC.Attachment.DeleteOnTermination, Equals, true)
+}
+
 func idsOnly(gs []ec2.SecurityGroup) []ec2.SecurityGroup {
 	for i := range gs {
 		gs[i].Name = ""
@@ -564,7 +649,11 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		g[i] = resp.SecurityGroup
 		c.Logf("group %d: %v", i, g[i])
 	}
-	defer s.deleteGroups(c, g)
+	// Reorder the groups below, so that g[3] is deleted first (the
+	// some of the reset depend on it, so they can't be deleted before
+	// g[3]). A slight optimization for local live tests, so that we
+	// don't need to wait 5s each time deleteGroups runs.
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g[0], g[3], g[1], g[2], g[4]})
 
 	perms := [][]ec2.IPPerm{
 		{{

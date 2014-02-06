@@ -5,7 +5,6 @@ import (
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/testutil"
 	. "launchpad.net/gocheck"
-	jc "launchpad.net/juju-core/testing/checkers"
 	"testing"
 )
 
@@ -191,7 +190,7 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(i0.SubnetId, Equals, "subnet-id")
 	c.Assert(i0.VPCId, Equals, "vpc-id")
 	c.Assert(i0.NetworkInterfaces, HasLen, 2)
-	c.Assert(i0.NetworkInterfaces, jc.DeepEquals, []ec2.NetworkInterface{{
+	c.Assert(i0.NetworkInterfaces, DeepEquals, []ec2.NetworkInterface{{
 		Id:              "eni-c6bb50ae",
 		SubnetId:        "subnet-id",
 		VPCId:           "vpc-id",

@@ -579,11 +579,15 @@ func (srv *Server) group(group ec2.SecurityGroup) *securityGroup {
 	return nil
 }
 
-// NewInstances creates n new instances in srv with the given instance
-// type, image ID, initial state, security groups, subnetId and
-// vpcId. If any group does not already exist, it will be
-// created. NewInstances returns the ids of the new instances.
-func (srv *Server) NewInstances(n int, instType string, imageId string, state ec2.InstanceState, groups []ec2.SecurityGroup, subnetId, vpcId string) []string {
+// NewInstancesVPC creates n new VPC instances in srv with the given
+// instance type, image ID, initial state, and security groups,
+// belonging to the given vpcId and subnetId. If any group does not
+// already exist, it will be created. NewInstancesVPC returns the ids
+// of the new instances.
+//
+// If vpcId and subnetId are both empty, this call is equivalent to
+// calling NewInstances.
+func (srv *Server) NewInstancesVPC(vpcId, subnetId string, n int, instType string, imageId string, state ec2.InstanceState, groups []ec2.SecurityGroup) []string {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
@@ -603,6 +607,14 @@ func (srv *Server) NewInstances(n int, instType string, imageId string, state ec
 		ids[i] = inst.id()
 	}
 	return ids
+}
+
+// NewInstances creates n new instances in srv with the given instance
+// type, image ID, initial state, and security groups. If any group
+// does not already exist, it will be created. NewInstances returns
+// the ids of the new instances.
+func (srv *Server) NewInstances(n int, instType string, imageId string, state ec2.InstanceState, groups []ec2.SecurityGroup) []string {
+	return srv.NewInstancesVPC("", "", n, instType, imageId, state, groups)
 }
 
 func (srv *Server) newInstance(r *reservation, instType string, imageId string, state ec2.InstanceState, subnetId, vpcId string) *Instance {

@@ -295,15 +295,20 @@ type Instance struct {
 // will be started; otherwise if options.MaxCount is zero, options.MinCount
 // will be used instead.
 //
-// If SubnetId field in options is set, a VPC-enabled instances will
-// be started, and the given ID must match and existing VPC subnet.
+// If SubnetId field in options is set, or any NetworkInterfaces are
+// given, a VPC-enabled instances will be started.  Cannot specify
+// both a SubnetId for the instances and SubnetId for any network
+// interface. When giving network interfaces set SubnetId just there.
+// Similarly, SecurityGroups cannot be specified if there are also
+// NetworkInterfaces specified. Use SecurityGroupIds in
+// NetworkInterfaces instead.
 //
 // See http://goo.gl/Mcm3b for more details.
 func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err error) {
 	var params map[string]string
-	if options.SubnetId != "" {
-		// When a SubnetId is specified, we need to use the API
-		// version with complete VPC support.
+	if options.SubnetId != "" || len(options.NetworkInterfaces) > 0 {
+		// When either SubnetId or NetworkInterfaces are specified, we
+		// need to use the API version with complete VPC support.
 		params = makeParamsVPC("RunInstances")
 	} else {
 		params = makeParams("RunInstances")
@@ -359,7 +364,10 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		}
 	}
 	for i, ni := range options.NetworkInterfaces {
-		n := strconv.Itoa(i + 1)
+		// Unlike other lists, NetworkInterface and PrivateIpAddresses
+		// should start from 0, not 1, according to the examples
+		// requests in the API documentation here http://goo.gl/Mcm3b.
+		n := strconv.Itoa(i)
 		prefix := "NetworkInterface." + n
 		if ni.Id != "" {
 			params[prefix+".NetworkInterfaceId"] = ni.Id
@@ -383,7 +391,7 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 			params[prefix+".SecondaryPrivateIpAddressCount"] = val
 		}
 		for j, ip := range ni.PrivateIPs {
-			k := strconv.Itoa(j + 1)
+			k := strconv.Itoa(j)
 			subprefix := prefix + ".PrivateIpAddresses." + k
 			params[subprefix+".PrivateIpAddress"] = ip.Address
 			params[subprefix+".Primary"] = strconv.FormatBool(ip.IsPrimary)
