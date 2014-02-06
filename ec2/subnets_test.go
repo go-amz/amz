@@ -91,7 +91,7 @@ func (s *S) TestSubnetsExample(c *C) {
 	c.Check(subnet.Tags, HasLen, 0)
 }
 
-// Subnet tests run against either a local test server or live on EC2.
+// Subnet tests to run against either a local test server or live on EC2.
 
 func (s *ServerTests) TestSubnets(c *C) {
 	resp, err := s.ec2.CreateVPC("10.2.0.0/16", "")
@@ -99,30 +99,7 @@ func (s *ServerTests) TestSubnets(c *C) {
 	vpcId := resp.VPC.Id
 	defer s.deleteVPCs(c, []string{vpcId})
 
-	// It might take some time for the VPC to get created, so we need
-	// to retry a few times when running against the EC2 servers.
-	var resp1 *ec2.CreateSubnetResp
-	testAttempt := aws.AttemptStrategy{
-		Total: 2 * time.Minute,
-		Delay: 5 * time.Second,
-	}
-	done := false
-	for a := testAttempt.Start(); a.Next(); {
-		resp1, err = s.ec2.CreateSubnet(vpcId, "10.2.1.0/24", "")
-		if s.errorCode(err, "InvalidVpcID.NotFound") {
-			c.Logf("VPC %v not created yet; retrying", vpcId)
-			continue
-		}
-		if err != nil {
-			c.Logf("retrying; CreateSubnet returned: %v", err)
-			continue
-		}
-		done = true
-		break
-	}
-	if !done {
-		c.Fatalf("timeout while waiting for VPC and subnet")
-	}
+	resp1 := s.createSubnet(c, vpcId, "10.2.1.0/24", "")
 	assertSubnet(c, resp1.Subnet, "", vpcId, "10.2.1.0/24")
 	id1 := resp1.Subnet.Id
 
@@ -136,8 +113,12 @@ func (s *ServerTests) TestSubnets(c *C) {
 	// servers). In some cases it takes a short while until both
 	// subnets are created, so we need to retry a few times to make
 	// sure.
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
 	var list *ec2.SubnetsResp
-	done = false
+	done := false
 	for a := testAttempt.Start(); a.Next(); {
 		c.Logf("waiting for %v to be created", []string{id1, id2})
 		list, err = s.ec2.Subnets(nil, nil)
@@ -186,6 +167,62 @@ func (s *ServerTests) TestSubnets(c *C) {
 	c.Assert(err, IsNil)
 	_, err = s.ec2.DeleteSubnet(id2)
 	c.Assert(err, IsNil)
+}
+
+// createSubnet ensures a subnet with the given vpcId and cidrBlock
+// gets created, retrying a few times with a timeout. This needs to be
+// done when testing against EC2 servers, because if the VPC was just
+// created it might take some time for it to show up, so the subnet
+// can be created.
+func (s *ServerTests) createSubnet(c *C, vpcId, cidrBlock, availZone string) *ec2.CreateSubnetResp {
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		resp, err := s.ec2.CreateSubnet(vpcId, cidrBlock, availZone)
+		if s.errorCode(err, "InvalidVpcID.NotFound") {
+			c.Logf("VPC %v not created yet; retrying", vpcId)
+			continue
+		}
+		if err != nil {
+			c.Logf("retrying; CreateSubnet returned: %v", err)
+			continue
+		}
+		return resp
+	}
+	c.Fatalf("timeout while waiting for VPC and subnet")
+	return nil
+}
+
+// deleteSubnets ensures the given subnets are deleted, by retrying
+// until a timeout or all subnets cannot be found anymore.  This
+// should be used to make sure tests leave no subnets around.
+func (s *ServerTests) deleteSubnets(c *C, ids []string) {
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		deleted := 0
+		c.Logf("deleting subnets %v", ids)
+		for _, id := range ids {
+			_, err := s.ec2.DeleteSubnet(id)
+			if err == nil || s.errorCode(err, "InvalidSubnetID.NotFound") {
+				c.Logf("subnet %s deleted", id)
+				deleted++
+				continue
+			}
+			if err != nil {
+				c.Logf("retrying; DeleteSubnet returned: %v", err)
+			}
+		}
+		if deleted == len(ids) {
+			c.Logf("all subnets deleted")
+			return
+		}
+	}
+	c.Fatalf("timeout while waiting %v subnets to get deleted!", ids)
 }
 
 func assertSubnet(c *C, obtained ec2.Subnet, expectId, expectVpcId, expectCidr string) {

@@ -23,8 +23,10 @@ func (s *S) TestCreateNetworkInterfaceExample(c *C) {
 	testServer.Response(200, nil, CreateNetworkInterfaceExample)
 
 	resp, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
-		SubnetId:         "subnet-b2a249da",
-		PrivateIPAddress: "10.0.2.157",
+		SubnetId: "subnet-b2a249da",
+		PrivateIPs: []ec2.PrivateIP{
+			{Address: "10.0.2.157", IsPrimary: true},
+		},
 		SecurityGroupIds: []string{"sg-1a2b3c4d"},
 	})
 	req := testServer.WaitRequest()
@@ -191,18 +193,17 @@ func (s *S) TestDetachNetworkInterfaceExample(c *C) {
 // live on EC2.
 
 func (s *ServerTests) TestNetworkInterfaces(c *C) {
-	vpcResp, err := s.ec2.CreateVPC("10.0.0.0/16", "")
+	vpcResp, err := s.ec2.CreateVPC("10.3.0.0/16", "")
 	c.Assert(err, IsNil)
 	vpcId := vpcResp.VPC.Id
-	defer s.ec2.DeleteVPC(vpcId)
+	defer s.deleteVPCs(c, []string{vpcId})
 
-	subResp, err := s.ec2.CreateSubnet(vpcId, "10.0.1.0/24", "")
-	c.Assert(err, IsNil)
+	subResp := s.createSubnet(c, vpcId, "10.3.1.0/24", "")
 	subId := subResp.Subnet.Id
-	defer s.ec2.DeleteSubnet(subId)
+	defer s.deleteSubnets(c, []string{subId})
 
 	sg := s.makeTestGroupVPC(c, vpcId, "vpc-sg-1", "vpc test group1")
-	defer s.ec2.DeleteSecurityGroup(sg)
+	defer s.deleteGroups(c, []ec2.SecurityGroup{sg})
 
 	instList, err := s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:      imageId,
@@ -215,20 +216,20 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 	instId := inst.InstanceId
 	defer s.ec2.TerminateInstances([]string{instId})
 
+	ips1 := []ec2.PrivateIP{{Address: "10.3.1.10", IsPrimary: true}}
 	resp1, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
-		SubnetId:         subId,
-		PrivateIPAddress: "10.0.1.10",
-		Description:      "My first iface",
+		SubnetId:    subId,
+		PrivateIPs:  ips1,
+		Description: "My first iface",
 	})
 	c.Assert(err, IsNil)
-	ips1 := []ec2.PrivateIP{{Address: "10.0.1.10", IsPrimary: true}}
 	assertNetworkInterface(c, resp1.NetworkInterface, "", subId, ips1)
 	c.Check(resp1.NetworkInterface.Description, Equals, "My first iface")
 	id1 := resp1.NetworkInterface.Id
 
 	ips2 := []ec2.PrivateIP{
-		{Address: "10.0.1.20", IsPrimary: true},
-		{Address: "10.0.1.22", IsPrimary: false},
+		{Address: "10.3.1.20", IsPrimary: true},
+		{Address: "10.3.1.22", IsPrimary: false},
 	}
 	resp2, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
 		SubnetId:         subId,
@@ -240,18 +241,47 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 	c.Assert(resp2.NetworkInterface.Groups, DeepEquals, []ec2.SecurityGroup{sg})
 	id2 := resp2.NetworkInterface.Id
 
-	list, err := s.ec2.NetworkInterfaces(nil, nil)
-	c.Assert(err, IsNil)
-	// We expect at least 2 NICs here, there might be another one
-	// added when the instance got launched.
-	c.Check(len(list.Interfaces) >= 2, Equals, true)
-	for _, iface := range list.Interfaces {
-		switch iface.Id {
-		case id1:
-			assertNetworkInterface(c, iface, id1, subId, ips1)
-		case id2:
-			assertNetworkInterface(c, iface, id2, subId, ips2)
+	// We only check for the network interfaces we just created,
+	// because the user might have others in his account (when testing
+	// against the EC2 servers). In some cases it takes a short while
+	// until both interfaces are created, so we need to retry a few
+	// times to make sure.
+	testAttempt := aws.AttemptStrategy{
+		Total: 5 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	var list *ec2.NetworkInterfacesResp
+	done := false
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for %v to be created", []string{id1, id2})
+		list, err = s.ec2.NetworkInterfaces(nil, nil)
+		if err != nil {
+			c.Logf("retrying; NetworkInterfaces returned: %v", err)
+			continue
 		}
+		found := 0
+		for _, iface := range list.Interfaces {
+			c.Logf("found NIC %v", iface)
+			switch iface.Id {
+			case id1:
+				assertNetworkInterface(c, iface, id1, subId, ips1)
+				found++
+			case id2:
+				assertNetworkInterface(c, iface, id2, subId, ips2)
+				found++
+			}
+			if found == 2 {
+				done = true
+				break
+			}
+		}
+		if done {
+			c.Logf("all NICs were created")
+			break
+		}
+	}
+	if !done {
+		c.Fatalf("timeout while waiting for NICs %v", []string{id1, id2})
 	}
 
 	list, err = s.ec2.NetworkInterfaces([]string{id1}, nil)
@@ -268,10 +298,6 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 
 	// Attachment might fail if the instance is not running yet,
 	// so we retry for a while until it succeeds.
-	testAttempt := aws.AttemptStrategy{
-		Total: 2 * time.Minute,
-		Delay: 5 * time.Second,
-	}
 	var attResp *ec2.AttachNetworkInterfaceResp
 	for a := testAttempt.Start(); a.Next(); {
 		attResp, err = s.ec2.AttachNetworkInterface(id2, instId, 1)
