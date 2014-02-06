@@ -92,14 +92,14 @@ func (s *S) TestSubnetsExample(c *C) {
 // Subnet tests run against either a local test server or live on EC2.
 
 func (s *ServerTests) TestSubnets(c *C) {
-	resp, err := s.ec2.CreateVPC("10.0.0.0/16", "")
+	resp, err := s.ec2.CreateVPC("10.2.0.0/24", "")
 	c.Assert(err, IsNil)
 	vpcId := resp.VPC.Id
 	defer s.ec2.DeleteVPC(vpcId)
 
-	resp1, err := s.ec2.CreateSubnet(vpcId, "10.0.1.0/24", "")
+	resp1, err := s.ec2.CreateSubnet(vpcId, "10.2.0.0/28", "")
 	c.Assert(err, IsNil)
-	assertSubnet(c, resp1.Subnet, "", vpcId, "10.0.1.0/24")
+	assertSubnet(c, resp1.Subnet, "", vpcId, "10.2.0.0/28")
 	id1 := resp1.Subnet.Id
 
 	resp2, err := s.ec2.CreateSubnet(vpcId, "10.0.0.0/24", "")

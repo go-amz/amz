@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"launchpad.net/goamz/ec2"
-	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -1102,7 +1101,7 @@ func (srv *Server) createSubnet(w http.ResponseWriter, req *http.Request, reqId 
 	// the CIDR is valid, we don't check the error here.
 	_, ipnet, _ := net.ParseCIDR(cidrBlock)
 	maskOnes, maskBits := ipnet.Mask.Size()
-	availIPs := int(math.Exp2(float64(maskBits-maskOnes))) - 5
+	availIPs := 1<<uint(maskBits-maskOnes) - 5
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
@@ -1198,6 +1197,8 @@ func (srv *Server) subnet(id string) *subnet {
 	return s
 }
 
+// collectIds takes all values with the given prefix from form and
+// returns a map with the ids as keys for easier lookup.
 func collectIds(form url.Values, prefix string) map[string]bool {
 	idMap := make(map[string]bool)
 	for name, vals := range form {

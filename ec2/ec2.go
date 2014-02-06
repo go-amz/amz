@@ -119,9 +119,6 @@ type xmlErrors struct {
 var timeNow = time.Now
 
 func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
-	if params["Version"] == "" {
-		params["Version"] = "2011-12-15"
-	}
 	params["Timestamp"] = timeNow().In(time.UTC).Format(time.RFC3339)
 	endpoint, err := url.Parse(ec2.Region.EC2Endpoint)
 	if err != nil {
@@ -177,14 +174,14 @@ func buildError(r *http.Response) error {
 }
 
 func makeParams(action string) map[string]string {
-	return makeParamsForVersion("2011-12-15", action)
+	return makeParamsWithVersion(action, "2011-12-15")
 }
 
 func makeParamsVPC(action string) map[string]string {
-	return makeParamsForVersion(VPCAPIVersion, action)
+	return makeParamsWithVersion(action, vpcAPIVersion)
 }
 
-func makeParamsForVersion(version, action string) map[string]string {
+func makeParamsWithVersion(action, version string) map[string]string {
 	params := make(map[string]string)
 	params["Action"] = action
 	params["Version"] = version
