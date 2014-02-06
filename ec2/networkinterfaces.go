@@ -77,21 +77,18 @@ type NetworkInterface struct {
 //
 // Only the SubnetId is required, the rest are optional.
 //
-// You can specify a primary private IP address by setting
-// PrivateIPAddress or by using PrivateIPs slice, to set more than one
-// IP. Only one of the given IPs can be set as primary.
+// One or more private IP addresses can be specified by using the
+// PrivateIPs slice. Only one of them can be set as primary.
 //
-// If you don't specify a private IP address, EC2 selects one for you
-// from the subnet range.
+// If PrivateIPs is empty, EC2 selects a primary private IP from the
+// subnet range.
 //
-// SecondaryPrivateIPsCount is the number of secondary private IP
-// addresses to assign to the network interface. When you specify a
-// number of secondary IP addresses, Amazon EC2 selects these IP
-// addresses within the subnet range. The number of IP addresses you
-// can assign to a network interface varies by instance type
+// When SecondaryPrivateIPsCount is non-zero, EC2 allocates that
+// number of IP addresses from within the subnet range.  The number of
+// IP addresses you can assign to a network interface varies by
+// instance type.
 type NetworkInterfaceOptions struct {
 	SubnetId                 string
-	PrivateIPAddress         string
 	PrivateIPs               []PrivateIP
 	SecondaryPrivateIPsCount int
 	Description              string
@@ -114,15 +111,7 @@ type CreateNetworkInterfaceResp struct {
 func (ec2 *EC2) CreateNetworkInterface(opts NetworkInterfaceOptions) (resp *CreateNetworkInterfaceResp, err error) {
 	params := makeParamsVPC("CreateNetworkInterface")
 	params["SubnetId"] = opts.SubnetId
-	var ips []PrivateIP
-	if opts.PrivateIPAddress != "" {
-		ips = append(ips, PrivateIP{
-			Address:   opts.PrivateIPAddress,
-			IsPrimary: true,
-		})
-	}
-	ips = append(ips, opts.PrivateIPs...)
-	for i, ip := range ips {
+	for i, ip := range opts.PrivateIPs {
 		prefix := fmt.Sprintf("PrivateIpAddresses.%d.", i+1)
 		params[prefix+"PrivateIpAddress"] = ip.Address
 		params[prefix+"Primary"] = strconv.FormatBool(ip.IsPrimary)
@@ -145,8 +134,8 @@ func (ec2 *EC2) CreateNetworkInterface(opts NetworkInterfaceOptions) (resp *Crea
 	return resp, nil
 }
 
-// DeleteNetworkInterface deletes the specified network interface.
-// You must detach the network interface before you can delete it.
+// DeleteNetworkInterface deletes the specified network interface,
+// which must have been previously detached.
 //
 // See http://goo.gl/MC1yOj for more details.
 func (ec2 *EC2) DeleteNetworkInterface(id string) (resp *SimpleResp, err error) {
@@ -189,7 +178,7 @@ func (ec2 *EC2) NetworkInterfaces(ids []string, filter *Filter) (resp *NetworkIn
 	return resp, nil
 }
 
-// AttachNetworkInterfaceResp is the response to a
+// AttachNetworkInterfaceResp is the response to an
 // AttachNetworkInterface request.
 //
 // See http://goo.gl/rEbSii for more details.
