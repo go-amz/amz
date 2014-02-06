@@ -24,7 +24,7 @@ const (
 	DedicatedTenancy = "dedicated"
 
 	// AWS API version used for VPC-related calls.
-	VPCAPIVersion = "2013-10-15"
+	vpcAPIVersion = "2013-10-15"
 )
 
 // VPC describes an Amazon Virtual Private Cloud (VPC).
@@ -50,24 +50,21 @@ type CreateVPCResp struct {
 
 // CreateVPC creates a VPC with the specified CIDR block.
 //
-// The smallest VPC you can create uses a /28 netmask (16 IP
+// The smallest VPC that can be created uses a /28 netmask (16 IP
 // addresses), and the largest uses a /16 netmask (65,536 IP
 // addresses).
 //
-// The supported tenancy options for instances launched into the
-// VPC. A value of DefaultTenancy means that instances can be launched
-// with any tenancy; a value of DedicatedTenancy means all instances
-// launched into the VPC are launched as dedicated tenancy instances
-// regardless of the tenancy assigned to the instance at
-// launch. Dedicated tenancy instances runs on single-tenant hardware.
+// The instanceTenancy value holds the tenancy options for instances
+// launched into the VPC - either DefaultTenancy or DedicatedTenancy.
 //
 // See http://goo.gl/nkwjvN for more details.
 func (ec2 *EC2) CreateVPC(CIDRBlock, instanceTenancy string) (resp *CreateVPCResp, err error) {
 	params := makeParamsVPC("CreateVpc")
 	params["CidrBlock"] = CIDRBlock
-	if instanceTenancy != "" {
-		params["InstanceTenancy"] = instanceTenancy
+	if instanceTenancy == "" {
+		instanceTenancy = DefaultTenancy
 	}
+	params["InstanceTenancy"] = instanceTenancy
 	resp = &CreateVPCResp{}
 	err = ec2.query(params, resp)
 	if err != nil {
@@ -76,12 +73,11 @@ func (ec2 *EC2) CreateVPC(CIDRBlock, instanceTenancy string) (resp *CreateVPCRes
 	return resp, nil
 }
 
-// DeleteVPC deletes the specified VPC. You must detach or delete all
-// gateways and resources that are associated with the VPC before you
-// can delete it. For example, you must terminate all instances
-// running in the VPC, delete all security groups associated with the
-// VPC (except the default one), delete all route tables associated
-// with the VPC (except the default one), and so on.
+// DeleteVPC deletes the VPC with the specified id. All gateways and
+// resources that are associated with the VPC must have been
+// previously deleted, including instances running in the VPC, and
+// non-default security groups and route tables associated with the
+// VPC.
 //
 // See http://goo.gl/bcxtbf for more details.
 func (ec2 *EC2) DeleteVPC(id string) (resp *SimpleResp, err error) {

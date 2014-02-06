@@ -39,17 +39,16 @@ type CreateSubnetResp struct {
 
 // CreateSubnet creates a subnet in an existing VPC.
 //
-// When you create each subnet, you provide the VPC ID and the CIDR
-// block you want for the subnet. After you create a subnet, you can't
-// change its CIDR block. The subnet's CIDR block can be the same as
-// the VPC's CIDR block (assuming you want only a single subnet in the
-// VPC), or a subset of the VPC's CIDR block. If you create more than
-// one subnet in a VPC, the subnets' CIDR blocks must not overlap. The
-// smallest subnet (and VPC) you can create uses a /28 netmask (16 IP
-// addresses), and the largest uses a /16 netmask (65,536 IP
-// addresses).
+// The vpcId and cidrBlock parameters specify the VPC id and CIDR
+// block respectively - these cannot be changed after creation. The
+// subnet's CIDR block can be the same as the VPC's CIDR block
+// (assuming you want only a single subnet in the VPC), or a subset of
+// the VPC's CIDR block. If more than one subnet is created in a VPC,
+// their CIDR blocks must not overlap. The smallest subnet (and VPC)
+// that can be created uses a /28 netmask (16 IP addresses), and the
+// largest uses a /16 netmask (65,536 IP addresses).
 //
-// availZone can be empty, in which case Amazon EC2 selects one for
+// availZone may be empty, in which case Amazon EC2 selects one for
 // you (recommended).
 //
 // See http://goo.gl/wLPhfI for more details.
@@ -68,8 +67,8 @@ func (ec2 *EC2) CreateSubnet(vpcId, cidrBlock, availZone string) (resp *CreateSu
 	return resp, nil
 }
 
-// DeleteSubnet deletes the specified subnet. You must terminate all
-// running instances in the subnet before you can delete the subnet.
+// DeleteSubnet deletes the specified subnet. All running instances in
+// the subnet must have been terminated.
 //
 // See http://goo.gl/KmhcBM for more details.
 func (ec2 *EC2) DeleteSubnet(id string) (resp *SimpleResp, err error) {
