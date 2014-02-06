@@ -11,8 +11,10 @@
 package ec2_test
 
 import (
+	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	. "launchpad.net/gocheck"
+	"time"
 )
 
 // Subnet tests with example responses
@@ -92,29 +94,81 @@ func (s *S) TestSubnetsExample(c *C) {
 // Subnet tests run against either a local test server or live on EC2.
 
 func (s *ServerTests) TestSubnets(c *C) {
-	resp, err := s.ec2.CreateVPC("10.2.0.0/24", "")
+	resp, err := s.ec2.CreateVPC("10.2.0.0/16", "")
 	c.Assert(err, IsNil)
 	vpcId := resp.VPC.Id
-	defer s.ec2.DeleteVPC(vpcId)
+	defer s.deleteVPCs(c, []string{vpcId})
 
-	resp1, err := s.ec2.CreateSubnet(vpcId, "10.2.0.0/28", "")
-	c.Assert(err, IsNil)
-	assertSubnet(c, resp1.Subnet, "", vpcId, "10.2.0.0/28")
+	// It might take some time for the VPC to get created, so we need
+	// to retry a few times when running against the EC2 servers.
+	var resp1 *ec2.CreateSubnetResp
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	done := false
+	for a := testAttempt.Start(); a.Next(); {
+		resp1, err = s.ec2.CreateSubnet(vpcId, "10.2.1.0/24", "")
+		if s.errorCode(err, "InvalidVpcID.NotFound") {
+			c.Logf("VPC %v not created yet; retrying", vpcId)
+			continue
+		}
+		if err != nil {
+			c.Logf("retrying; CreateSubnet returned: %v", err)
+			continue
+		}
+		done = true
+		break
+	}
+	if !done {
+		c.Fatalf("timeout while waiting for VPC and subnet")
+	}
+	assertSubnet(c, resp1.Subnet, "", vpcId, "10.2.1.0/24")
 	id1 := resp1.Subnet.Id
 
-	resp2, err := s.ec2.CreateSubnet(vpcId, "10.0.0.0/24", "")
+	resp2, err := s.ec2.CreateSubnet(vpcId, "10.2.2.0/24", "")
 	c.Assert(err, IsNil)
-	assertSubnet(c, resp2.Subnet, "", vpcId, "10.0.0.0/24")
+	assertSubnet(c, resp2.Subnet, "", vpcId, "10.2.2.0/24")
 	id2 := resp2.Subnet.Id
 
-	list, err := s.ec2.Subnets(nil, nil)
-	c.Assert(err, IsNil)
-	c.Assert(list.Subnets, HasLen, 2)
-	if list.Subnets[0].Id != id1 {
-		list.Subnets[0], list.Subnets[1] = list.Subnets[1], list.Subnets[0]
+	// We only check for the subnets we just created, because the user
+	// might have others in his account (when testing against the EC2
+	// servers). In some cases it takes a short while until both
+	// subnets are created, so we need to retry a few times to make
+	// sure.
+	var list *ec2.SubnetsResp
+	done = false
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for %v to be created", []string{id1, id2})
+		list, err = s.ec2.Subnets(nil, nil)
+		if err != nil {
+			c.Logf("retrying; Subnets returned: %v", err)
+			continue
+		}
+		found := 0
+		for _, subnet := range list.Subnets {
+			c.Logf("found subnet %v", subnet)
+			switch subnet.Id {
+			case id1:
+				assertSubnet(c, subnet, id1, vpcId, resp1.Subnet.CIDRBlock)
+				found++
+			case id2:
+				assertSubnet(c, subnet, id2, vpcId, resp2.Subnet.CIDRBlock)
+				found++
+			}
+			if found == 2 {
+				done = true
+				break
+			}
+		}
+		if done {
+			c.Logf("all subnets were created")
+			break
+		}
 	}
-	assertSubnet(c, list.Subnets[0], id1, vpcId, resp1.Subnet.CIDRBlock)
-	assertSubnet(c, list.Subnets[1], id2, vpcId, resp2.Subnet.CIDRBlock)
+	if !done {
+		c.Fatalf("timeout while waiting for subnets %v", []string{id1, id2})
+	}
 
 	list, err = s.ec2.Subnets([]string{id1}, nil)
 	c.Assert(err, IsNil)
