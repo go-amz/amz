@@ -181,7 +181,7 @@ func (s *ServerTests) createSubnet(c *C, vpcId, cidrBlock, availZone string) *ec
 	}
 	for a := testAttempt.Start(); a.Next(); {
 		resp, err := s.ec2.CreateSubnet(vpcId, cidrBlock, availZone)
-		if s.errorCode(err, "InvalidVpcID.NotFound") {
+		if s.errorCode(err) == "InvalidVpcID.NotFound" {
 			c.Logf("VPC %v not created yet; retrying", vpcId)
 			continue
 		}
