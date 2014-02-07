@@ -150,7 +150,7 @@ func terminateInstances(c *C, e *ec2.EC2, insts []*ec2.Instance) {
 func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup {
 	// Clean it up if a previous test left it around.
 	_, err := s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
-	if err != nil && err.(*ec2.Error).Code != "InvalidGroup.NotFound" {
+	if err != nil && s.errorCode(err) != "InvalidGroup.NotFound" {
 		c.Fatalf("delete security group: %v", err)
 	}
 
@@ -182,7 +182,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		SourceIPs: []string{"z127.0.0.1/24"},
 	}})
 	c.Assert(err, NotNil)
-	c.Check(err.(*ec2.Error).Code, Equals, "InvalidPermission.Malformed")
+	c.Check(s.errorCode(err), Equals, "InvalidPermission.Malformed")
 
 	// Check that AuthorizeSecurityGroup adds the correct authorizations.
 	_, err = s.ec2.AuthorizeSecurityGroup(g0, []ec2.IPPerm{{
@@ -229,7 +229,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 	// Check that we can't delete g1 (because g0 is using it)
 	_, err = s.ec2.DeleteSecurityGroup(g1)
 	c.Assert(err, NotNil)
-	c.Check(err.(*ec2.Error).Code, Equals, "InvalidGroup.InUse")
+	c.Check(s.errorCode(err), Equals, "InvalidGroup.InUse")
 
 	_, err = s.ec2.RevokeSecurityGroup(g0, []ec2.IPPerm{{
 		Protocol:     "tcp",
@@ -300,7 +300,7 @@ func (s *ServerTests) TestDuplicateIPPerm(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: name}, perms[0:2])
-	c.Assert(err, ErrorMatches, `.*\(InvalidPermission.Duplicate\)`)
+	c.Assert(s.errorCode(err), Equals, "InvalidPermission.Duplicate")
 }
 
 type filterSpec struct {
@@ -634,7 +634,7 @@ func (s *ServerTests) deleteGroups(c *C, groups []ec2.SecurityGroup) {
 		c.Logf("deleting groups %v", groups)
 		for _, group := range groups {
 			_, err := s.ec2.DeleteSecurityGroup(group)
-			if err == nil || s.errorCode(err, "InvalidGroup.NotFound") {
+			if err == nil || s.errorCode(err) == "InvalidGroup.NotFound" {
 				c.Logf("group %v deleted", group)
 				deleted++
 				continue
@@ -651,14 +651,12 @@ func (s *ServerTests) deleteGroups(c *C, groups []ec2.SecurityGroup) {
 	c.Fatalf("timeout while waiting %v groups to get deleted!", groups)
 }
 
-// errorCode returns whether the given error is not nil and matches
-// the given ec2.Error code.
-func (s *ServerTests) errorCode(err error, code string) bool {
-	if err == nil {
-		return false
+// errorCode returns the code of the given error, assuming it's not
+// nil and it's an instance of *ec2.Error. It returns an empty string
+// otherwise.
+func (s *ServerTests) errorCode(err error) string {
+	if err, _ := err.(*ec2.Error); err != nil {
+		return err.Code
 	}
-	if err1, ok := err.(*ec2.Error); ok {
-		return err1.Code == code
-	}
-	return false
+	return ""
 }

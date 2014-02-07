@@ -27,6 +27,10 @@ import (
 
 const debug = false
 
+// legacyAPIVersion is the AWS API version used for all but
+// VPC-related requests.
+const legacyAPIVersion = "2011-12-15"
+
 // The EC2 type encapsulates operations with a specific EC2 region.
 type EC2 struct {
 	aws.Auth
@@ -174,7 +178,7 @@ func buildError(r *http.Response) error {
 }
 
 func makeParams(action string) map[string]string {
-	return makeParamsWithVersion(action, "2011-12-15")
+	return makeParamsWithVersion(action, legacyAPIVersion)
 }
 
 func makeParamsVPC(action string) map[string]string {
