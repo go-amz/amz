@@ -3,7 +3,7 @@
 //
 //   https://wiki.ubuntu.com/goamz
 //
-// Copyright (c) 2011 Canonical Ltd.
+// Copyright (c) 2014 Canonical Ltd.
 //
 // Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
 //
@@ -208,7 +208,7 @@ func (s *ServerTests) deleteSubnets(c *C, ids []string) {
 		c.Logf("deleting subnets %v", ids)
 		for _, id := range ids {
 			_, err := s.ec2.DeleteSubnet(id)
-			if err == nil || s.errorCode(err, "InvalidSubnetID.NotFound") {
+			if err == nil || s.errorCode(err) == "InvalidSubnetID.NotFound" {
 				c.Logf("subnet %s deleted", id)
 				deleted++
 				continue
