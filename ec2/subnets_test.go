@@ -3,7 +3,7 @@
 //
 //   https://wiki.ubuntu.com/goamz
 //
-// Copyright (c) 2011 Canonical Ltd.
+// Copyright (c) 2014 Canonical Ltd.
 //
 // Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
 //
@@ -109,7 +109,7 @@ func (s *ServerTests) TestSubnets(c *C) {
 	done := false
 	for a := testAttempt.Start(); a.Next(); {
 		resp1, err = s.ec2.CreateSubnet(vpcId, "10.2.1.0/24", "")
-		if s.errorCode(err, "InvalidVpcID.NotFound") {
+		if s.errorCode(err) == "InvalidVpcID.NotFound" {
 			c.Logf("VPC %v not created yet; retrying", vpcId)
 			continue
 		}
