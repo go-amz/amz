@@ -1093,7 +1093,7 @@ func (srv *Server) vpc(id string) *vpc {
 }
 
 // collectIds takes all values with the given prefix from form and
-// returns a map with the ids as keys for easier lookup.
+// returns a map with the ids as keys.
 func collectIds(form url.Values, prefix string) map[string]bool {
 	idMap := make(map[string]bool)
 	for name, vals := range form {
