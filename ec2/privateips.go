@@ -3,7 +3,7 @@
 //
 //   https://wiki.ubuntu.com/goamz
 //
-// Copyright (c) 2011 Canonical Ltd.
+// Copyright (c) 2014 Canonical Ltd.
 //
 // Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
 //
@@ -16,17 +16,17 @@ import (
 
 // AssignPrivateIPAddresses assigns one or more secondary private IP
 // addresses to the specified network interface. One or more specific
-// secondary IP addresses can be given explicitly, or a number of
-// secondary IP addresses can be given, to be automatically assigned
-// within the subnet's CIDR block range. The number of secondary IP
-// addresses that can be assigned to an instance varies by instance
+// secondary IP addresses can be given explicitly, or a count of
+// secondary IP addresses can be given to be automatically assigned
+// within the subnet's CIDR block range. The total number of secondary
+// IP addresses that can be assigned to an instance varies by instance
 // type.
 //
-// Either ipAddresses or secondaryIPsCount can be given but not both.
+// If ipAddresses is non-empty, secondaryIPsCount is ignored (they are
+// mutually exclusive).
 //
-// allowReassignment is optional and indicates whether to allow an IP
-// address that is already assigned to another network interface or
-// instance to be reassigned to the specified network interface.
+// allowReassignment specifies whether to allow reassignment of
+// addresses currently assigned to a different network interface.
 //
 // See http://goo.gl/MoeH0L more details.
 func (ec2 *EC2) AssignPrivateIPAddresses(interfaceId string, ipAddresses []string, secondaryIPsCount int, allowReassignment bool) (resp *SimpleResp, err error) {
