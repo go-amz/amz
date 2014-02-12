@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2014 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2_test
 
@@ -22,23 +20,23 @@ import (
 func (s *S) TestCreateVPCExample(c *C) {
 	testServer.Response(200, nil, CreateVpcExample)
 
-	resp, err := s.ec2.CreateVPC("10.0.0.0/16", ec2.DefaultTenancy)
+	resp, err := s.ec2.CreateVPC("10.0.0.0/16", "default")
 	req := testServer.WaitRequest()
 
 	c.Assert(req.Form["Action"], DeepEquals, []string{"CreateVpc"})
 	c.Assert(req.Form["CidrBlock"], DeepEquals, []string{"10.0.0.0/16"})
-	c.Assert(req.Form["InstanceTenancy"], DeepEquals, []string{ec2.DefaultTenancy})
+	c.Assert(req.Form["InstanceTenancy"], DeepEquals, []string{"default"})
 
 	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "7a62c49f-347e-4fc4-9331-6e8eEXAMPLE")
 	vpc := resp.VPC
 	c.Check(vpc.Id, Equals, "vpc-1a2b3c4d")
-	c.Check(vpc.State, Equals, ec2.PendingState)
+	c.Check(vpc.State, Equals, "pending")
 	c.Check(vpc.CIDRBlock, Equals, "10.0.0.0/16")
 	c.Check(vpc.DHCPOptionsId, Equals, "dopt-1a2b3c4d2")
 	c.Check(vpc.Tags, HasLen, 0)
 	c.Check(vpc.IsDefault, Equals, false)
-	c.Check(vpc.InstanceTenancy, Equals, ec2.DefaultTenancy)
+	c.Check(vpc.InstanceTenancy, Equals, "default")
 }
 
 func (s *S) TestDeleteVPCExample(c *C) {
@@ -68,12 +66,12 @@ func (s *S) TestVPCsExample(c *C) {
 	c.Assert(resp.VPCs, HasLen, 1)
 	vpc := resp.VPCs[0]
 	c.Check(vpc.Id, Equals, "vpc-1a2b3c4d")
-	c.Check(vpc.State, Equals, ec2.AvailableState)
+	c.Check(vpc.State, Equals, "available")
 	c.Check(vpc.CIDRBlock, Equals, "10.0.0.0/23")
 	c.Check(vpc.DHCPOptionsId, Equals, "dopt-7a8b9c2d")
 	c.Check(vpc.Tags, HasLen, 0)
 	c.Check(vpc.IsDefault, Equals, false)
-	c.Check(vpc.InstanceTenancy, Equals, ec2.DefaultTenancy)
+	c.Check(vpc.InstanceTenancy, Equals, "default")
 }
 
 // VPC tests to run against either a local test server or live on EC2.
@@ -84,7 +82,7 @@ func (s *ServerTests) TestVPCs(c *C) {
 	assertVPC(c, resp1.VPC, "", "10.0.0.0/16")
 	id1 := resp1.VPC.Id
 
-	resp2, err := s.ec2.CreateVPC("10.1.0.0/16", ec2.DefaultTenancy)
+	resp2, err := s.ec2.CreateVPC("10.1.0.0/16", "default")
 	c.Assert(err, IsNil)
 	assertVPC(c, resp2.VPC, "", "10.1.0.0/16")
 	id2 := resp2.VPC.Id
@@ -155,7 +153,7 @@ func assertVPC(c *C, obtained ec2.VPC, expectId, expectCidr string) {
 	} else {
 		c.Check(obtained.Id, Matches, `^vpc-[0-9a-f]+$`)
 	}
-	c.Check(obtained.State, Matches, "("+ec2.AvailableState+"|"+ec2.PendingState+")")
+	c.Check(obtained.State, Matches, "(available|pending)")
 	if expectCidr != "" {
 		c.Check(obtained.CIDRBlock, Equals, expectCidr)
 	} else {
@@ -164,9 +162,5 @@ func assertVPC(c *C, obtained ec2.VPC, expectId, expectCidr string) {
 	c.Check(obtained.DHCPOptionsId, Matches, `^dopt-[0-9a-f]+$`)
 	c.Check(obtained.IsDefault, Equals, false)
 	c.Check(obtained.Tags, HasLen, 0)
-	c.Check(
-		obtained.InstanceTenancy,
-		Matches,
-		"("+ec2.DefaultTenancy+"|"+ec2.DedicatedTenancy+")",
-	)
+	c.Check(obtained.InstanceTenancy, Matches, "(default|dedicated)")
 }

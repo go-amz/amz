@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2011 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2
 
@@ -25,11 +23,16 @@ import (
 	"time"
 )
 
-const debug = false
+const (
+	debug = false
 
-// legacyAPIVersion is the AWS API version used for all but
-// VPC-related requests.
-const legacyAPIVersion = "2011-12-15"
+	// legacyAPIVersion is the AWS API version used for all but
+	// VPC-related requests.
+	legacyAPIVersion = "2011-12-15"
+
+	// AWS API version used for VPC-related calls.
+	vpcAPIVersion = "2013-10-15"
+)
 
 // The EC2 type encapsulates operations with a specific EC2 region.
 type EC2 struct {
