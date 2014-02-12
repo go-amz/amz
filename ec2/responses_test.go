@@ -684,3 +684,151 @@ var DescribeSubnetsExample = `
   </subnetSet>
 </DescribeSubnetsResponse>
 `
+
+// http://goo.gl/ze3VhA
+var CreateNetworkInterfaceExample = `
+<CreateNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+ <requestId>8dbe591e-5a22-48cb-b948-dd0aadd55adf</requestId>
+    <networkInterface>
+        <networkInterfaceId>eni-cfca76a6</networkInterfaceId>
+        <subnetId>subnet-b2a249da</subnetId>
+        <vpcId>vpc-c31dafaa</vpcId>
+        <availabilityZone>ap-southeast-1b</availabilityZone>
+        <description/>
+        <ownerId>251839141158</ownerId>
+        <requesterManaged>false</requesterManaged>
+        <status>available</status>
+        <macAddress>02:74:b0:72:79:61</macAddress>
+        <privateIpAddress>10.0.2.157</privateIpAddress>
+        <sourceDestCheck>true</sourceDestCheck>
+        <groupSet>
+            <item>
+                <groupId>sg-1a2b3c4d</groupId>
+                <groupName>default</groupName>
+            </item>
+        </groupSet>
+        <tagSet/>
+        <privateIpAddressesSet>
+            <item>
+                <privateIpAddress>10.0.2.157</privateIpAddress>
+                <primary>true</primary>
+            </item>
+        </privateIpAddressesSet>
+    </networkInterface>
+</CreateNetworkInterfaceResponse>
+`
+
+// http://goo.gl/MC1yOj
+var DeleteNetworkInterfaceExample = `
+<DeleteNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+    <requestId>e1c6d73b-edaa-4e62-9909-6611404e1739</requestId>
+    <return>true</return>
+</DeleteNetworkInterfaceResponse>
+`
+
+// http://goo.gl/2LcXtM
+var DescribeNetworkInterfacesExample = `
+<DescribeNetworkInterfacesResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+    <requestId>fc45294c-006b-457b-bab9-012f5b3b0e40</requestId>
+     <networkInterfaceSet>
+       <item>
+         <networkInterfaceId>eni-0f62d866</networkInterfaceId>
+         <subnetId>subnet-c53c87ac</subnetId>
+         <vpcId>vpc-cc3c87a5</vpcId>
+         <availabilityZone>ap-southeast-1b</availabilityZone>
+         <description/>
+         <ownerId>053230519467</ownerId>
+         <requesterManaged>false</requesterManaged>
+         <status>in-use</status>
+         <macAddress>02:81:60:cb:27:37</macAddress>
+         <privateIpAddress>10.0.0.146</privateIpAddress>
+         <sourceDestCheck>true</sourceDestCheck>
+         <groupSet>
+           <item>
+             <groupId>sg-3f4b5653</groupId>
+             <groupName>default</groupName>
+           </item>
+         </groupSet>
+         <attachment>
+           <attachmentId>eni-attach-6537fc0c</attachmentId>
+           <instanceId>i-22197876</instanceId>
+           <instanceOwnerId>053230519467</instanceOwnerId>
+           <deviceIndex>0</deviceIndex>
+           <status>attached</status>
+           <attachTime>2012-07-01T21:45:27.000Z</attachTime>
+           <deleteOnTermination>true</deleteOnTermination>
+         </attachment>
+         <tagSet/>
+         <privateIpAddressesSet>
+           <item>
+             <privateIpAddress>10.0.0.146</privateIpAddress>
+             <primary>true</primary>
+           </item>
+           <item>
+             <privateIpAddress>10.0.0.148</privateIpAddress>
+             <primary>false</primary>
+           </item>
+           <item>
+             <privateIpAddress>10.0.0.150</privateIpAddress>
+             <primary>false</primary>
+           </item>
+         </privateIpAddressesSet>
+       </item>
+       <item>
+         <networkInterfaceId>eni-a66ed5cf</networkInterfaceId>
+         <subnetId>subnet-cd8a35a4</subnetId>
+         <vpcId>vpc-f28a359b</vpcId>
+         <availabilityZone>ap-southeast-1b</availabilityZone>
+         <description>Primary network interface</description>
+         <ownerId>053230519467</ownerId>
+         <requesterManaged>false</requesterManaged>
+         <status>in-use</status>
+         <macAddress>02:78:d7:00:8a:1e</macAddress>
+         <privateIpAddress>10.0.1.233</privateIpAddress>
+         <sourceDestCheck>true</sourceDestCheck>
+         <groupSet>
+           <item>
+             <groupId>sg-a2a0b2ce</groupId>
+             <groupName>quick-start-1</groupName>
+           </item>
+         </groupSet>
+         <attachment>
+           <attachmentId>eni-attach-a99c57c0</attachmentId>
+           <instanceId>i-886401dc</instanceId>
+           <instanceOwnerId>053230519467</instanceOwnerId>
+           <deviceIndex>0</deviceIndex>
+           <status>attached</status>
+           <attachTime>2012-06-27T20:08:44.000Z</attachTime>
+           <deleteOnTermination>true</deleteOnTermination>
+         </attachment>
+         <tagSet/>
+         <privateIpAddressesSet>
+           <item>
+             <privateIpAddress>10.0.1.233</privateIpAddress>
+             <primary>true</primary>
+           </item>
+           <item>
+             <privateIpAddress>10.0.1.20</privateIpAddress>
+             <primary>false</primary>
+           </item>
+         </privateIpAddressesSet>
+       </item>
+     </networkInterfaceSet>
+</DescribeNetworkInterfacesResponse>
+`
+
+// http://goo.gl/rEbSii
+var AttachNetworkInterfaceExample = `
+<AttachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+    <requestId>ace8cd1e-e685-4e44-90fb-92014d907212</requestId>
+    <attachmentId>eni-attach-d94b09b0</attachmentId>
+</AttachNetworkInterfaceResponse>
+`
+
+// http://goo.gl/0Xc1px
+var DetachNetworkInterfaceExample = `
+<DetachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+    <requestId>ce540707-0635-46bc-97da-33a8a362a0e8</requestId>
+    <return>true</return>
+</DetachNetworkInterfaceResponse>
+`

@@ -148,13 +148,17 @@ func terminateInstances(c *C, e *ec2.EC2, insts []*ec2.Instance) {
 }
 
 func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup {
+	return s.makeTestGroupVPC(c, "", name, descr)
+}
+
+func (s *ServerTests) makeTestGroupVPC(c *C, vpcId, name, descr string) ec2.SecurityGroup {
 	// Clean it up if a previous test left it around.
 	_, err := s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
 	if err != nil && errorCode(err) != "InvalidGroup.NotFound" {
 		c.Fatalf("delete security group: %v", err)
 	}
 
-	resp, err := s.ec2.CreateSecurityGroup(name, descr)
+	resp, err := s.ec2.CreateSecurityGroupVPC(vpcId, name, descr)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Name, Equals, name)
 	return resp.SecurityGroup

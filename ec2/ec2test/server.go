@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 var b64 = base64.StdEncoding
@@ -52,6 +53,8 @@ type Server struct {
 	groups               map[string]*securityGroup // id -> group
 	vpcs                 map[string]*vpc           // id -> vpc
 	subnets              map[string]*subnet        // id -> subnet
+	ifaces               map[string]*iface         // id -> iface
+	attachments          map[string]*attachment    // id -> attachment
 	maxId                counter
 	reqId                counter
 	reservationId        counter
@@ -59,6 +62,8 @@ type Server struct {
 	vpcId                counter
 	dhcpOptsId           counter
 	subnetId             counter
+	ifaceId              counter
+	attachId             counter
 	initialInstanceState ec2.InstanceState
 }
 
@@ -103,6 +108,7 @@ type securityGroup struct {
 	id          string
 	name        string
 	description string
+	vpcId       string
 
 	perms map[permKey]bool
 }
@@ -236,6 +242,41 @@ func (s *subnet) matchAttr(attr, value string) (ok bool, err error) {
 	return false, fmt.Errorf("unknown attribute %q", attr)
 }
 
+type iface struct {
+	ec2.NetworkInterface
+}
+
+func (i *iface) matchAttr(attr, value string) (ok bool, err error) {
+	notImplemented := []string{
+		"addresses.", "association.", "tag", "requester-",
+		"attachment.", "source-dest-check", "mac-address",
+		"group-", "description", "private-", "owner-id",
+	}
+	switch attr {
+	case "availability-zone":
+		return i.AvailZone == value, nil
+	case "network-interface-id":
+		return i.Id == value, nil
+	case "status":
+		return i.Status == value, nil
+	case "subnet-id":
+		return i.SubnetId == value, nil
+	case "vpc-id":
+		return i.VPCId == value, nil
+	default:
+		for _, item := range notImplemented {
+			if strings.HasPrefix(attr, item) {
+				return false, fmt.Errorf("%q filter not implemented", attr)
+			}
+		}
+	}
+	return false, fmt.Errorf("unknown attribute %q", attr)
+}
+
+type attachment struct {
+	ec2.NetworkInterfaceAttachment
+}
+
 var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, string) interface{}{
 	"RunInstances":                  (*Server).runInstances,
 	"TerminateInstances":            (*Server).terminateInstances,
@@ -251,6 +292,11 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"CreateSubnet":                  (*Server).createSubnet,
 	"DeleteSubnet":                  (*Server).deleteSubnet,
 	"DescribeSubnets":               (*Server).describeSubnets,
+	"CreateNetworkInterface":        (*Server).createIFace,
+	"DeleteNetworkInterface":        (*Server).deleteIFace,
+	"DescribeNetworkInterfaces":     (*Server).describeIFaces,
+	"AttachNetworkInterface":        (*Server).attachIFace,
+	"DetachNetworkInterface":        (*Server).detachIFace,
 }
 
 const ownerId = "9876"
@@ -273,6 +319,8 @@ func NewServer() (*Server, error) {
 		groups:               make(map[string]*securityGroup),
 		vpcs:                 make(map[string]*vpc),
 		subnets:              make(map[string]*subnet),
+		ifaces:               make(map[string]*iface),
+		attachments:          make(map[string]*attachment),
 		reservations:         make(map[string]*reservation),
 		initialInstanceState: Pending,
 	}
@@ -1152,6 +1200,158 @@ func (srv *Server) describeSubnets(w http.ResponseWriter, req *http.Request, req
 	return &resp
 }
 
+func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	s := srv.subnet(req.Form.Get("SubnetId"))
+	ipMap := make(map[int]ec2.PrivateIP)
+	primaryIP := req.Form.Get("PrivateIpAddress")
+	if primaryIP != "" {
+		ipMap[0] = ec2.PrivateIP{Address: primaryIP, IsPrimary: true}
+	}
+	desc := req.Form.Get("Description")
+
+	var groups []ec2.SecurityGroup
+	for name, vals := range req.Form {
+		if strings.HasPrefix(name, "SecurityGroupId.") {
+			g := ec2.SecurityGroup{Id: vals[0]}
+			sg := srv.group(g)
+			if sg == nil {
+				fatalf(400, "InvalidGroup.NotFound", "no such group %v", g)
+			}
+			groups = append(groups, sg.ec2SecurityGroup())
+		}
+		if strings.HasPrefix(name, "PrivateIpAddresses.") {
+			var ip ec2.PrivateIP
+			parts := strings.Split(name, ".")
+			index := atoi(parts[1]) - 1
+			if index < 0 {
+				fatalf(400, "InvalidParameterValue", "invalid index %s", name)
+			}
+			if _, ok := ipMap[index]; ok {
+				ip = ipMap[index]
+			}
+			switch parts[2] {
+			case "PrivateIpAddress":
+				ip.Address = vals[0]
+			case "Primary":
+				val, err := strconv.ParseBool(vals[0])
+				if err != nil {
+					fatalf(400, "InvalidParameterValue", "bad flag %s: %s", name, vals[0])
+				}
+				ip.IsPrimary = val
+			}
+			ipMap[index] = ip
+		}
+	}
+	privateIPs := make([]ec2.PrivateIP, len(ipMap))
+	for index, ip := range ipMap {
+		if ip.IsPrimary {
+			primaryIP = ip.Address
+		}
+		privateIPs[index] = ip
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	i := &iface{ec2.NetworkInterface{
+		Id:               fmt.Sprintf("eni-%d", srv.ifaceId.next()),
+		SubnetId:         s.Id,
+		VPCId:            s.VPCId,
+		AvailZone:        s.AvailZone,
+		Description:      desc,
+		OwnerId:          ownerId,
+		Status:           ec2.AvailableStatus,
+		MACAddress:       fmt.Sprintf("%02d:81:60:cb:27:37", srv.ifaceId),
+		PrivateIPAddress: primaryIP,
+		SourceDestCheck:  true,
+		Groups:           groups,
+		PrivateIPs:       privateIPs,
+	}}
+	srv.ifaces[i.Id] = i
+	r := &ec2.CreateNetworkInterfaceResp{
+		RequestId:        reqId,
+		NetworkInterface: i.NetworkInterface,
+	}
+	return r
+}
+
+func (srv *Server) deleteIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	i := srv.iface(req.Form.Get("NetworkInterfaceId"))
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	delete(srv.ifaces, i.Id)
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{"", "DeleteNetworkInterface"},
+		RequestId: reqId,
+	}
+}
+
+func (srv *Server) describeIFaces(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	idMap := collectIds(req.Form, "NetworkInterfaceId.")
+	f := newFilter(req.Form)
+	var resp ec2.NetworkInterfacesResp
+	resp.RequestId = reqId
+	for _, i := range srv.ifaces {
+		ok, err := f.ok(i)
+		if ok && (len(idMap) == 0 || idMap[i.Id]) {
+			resp.Interfaces = append(resp.Interfaces, i.NetworkInterface)
+		} else if err != nil {
+			fatalf(400, "InvalidParameterValue", "describe ifaces: %v", err)
+		}
+	}
+	return &resp
+}
+
+func (srv *Server) attachIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	i := srv.iface(req.Form.Get("NetworkInterfaceId"))
+	inst := srv.instance(req.Form.Get("InstanceId"))
+	devIndex := atoi(req.Form.Get("DeviceIndex"))
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	a := &attachment{ec2.NetworkInterfaceAttachment{
+		Id:                  fmt.Sprintf("eni-attach-%d", srv.attachId.next()),
+		InstanceId:          inst.id(),
+		InstanceOwnerId:     ownerId,
+		DeviceIndex:         devIndex,
+		Status:              ec2.InUseStatus,
+		AttachTime:          time.Now().Format(time.RFC3339),
+		DeleteOnTermination: true,
+	}}
+	srv.attachments[a.Id] = a
+	i.Attachment = a.NetworkInterfaceAttachment
+	srv.ifaces[i.Id] = i
+	r := &ec2.AttachNetworkInterfaceResp{
+		RequestId:    reqId,
+		AttachmentId: a.Id,
+	}
+	return r
+}
+
+func (srv *Server) detachIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	att := srv.attachment(req.Form.Get("AttachmentId"))
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	for _, i := range srv.ifaces {
+		if i.Attachment.Id == att.Id {
+			i.Attachment = ec2.NetworkInterfaceAttachment{}
+			srv.ifaces[i.Id] = i
+			break
+		}
+	}
+	delete(srv.attachments, att.Id)
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{"", "DetachNetworkInterface"},
+		RequestId: reqId,
+	}
+}
+
 func (r *reservation) hasRunningMachine() bool {
 	for _, inst := range r.instances {
 		if inst.state.Code != ShuttingDown.Code && inst.state.Code != Terminated.Code {
@@ -1195,6 +1395,49 @@ func (srv *Server) subnet(id string) *subnet {
 		fatalf(400, "InvalidSubnetID.NotFound", "subnet %s not found", id)
 	}
 	return s
+}
+
+func (srv *Server) iface(id string) *iface {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing networkInterfaceId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	i, found := srv.ifaces[id]
+	if !found {
+		fatalf(400, "InvalidNetworkInterfaceID.NotFound", "interface %s not found", id)
+	}
+	return i
+}
+
+func (srv *Server) instance(id string) *Instance {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing instanceId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	inst, found := srv.instances[id]
+	if !found {
+		fatalf(400, "InvalidInstanceID.NotFound", "instance %s not found", id)
+	}
+	return inst
+}
+
+func (srv *Server) attachment(id string) *attachment {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing attachmentId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	att, found := srv.attachments[id]
+	if !found {
+		fatalf(
+			400,
+			"InvalidNetworkInterfaceAttachmentId.NotFound",
+			"attachment %s not found", id,
+		)
+	}
+	return att
 }
 
 // collectIds takes all values with the given prefix from form and

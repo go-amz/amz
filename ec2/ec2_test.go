@@ -400,20 +400,30 @@ func (s *S) TestDescribeSnapshotsExample(c *C) {
 	c.Assert(s0.Tags[0].Value, Equals, "demo_db_14_backup")
 }
 
-func (s *S) TestCreateSecurityGroupExample(c *C) {
-	testServer.Response(200, nil, CreateSecurityGroupExample)
-
-	resp, err := s.ec2.CreateSecurityGroup("websrv", "Web Servers")
-
+func (s *S) checkCreateSGResponse(c *C, resp *ec2.CreateSecurityGroupResp, id, name, description, vpcId string) {
 	req := testServer.WaitRequest()
 	c.Assert(req.Form["Action"], DeepEquals, []string{"CreateSecurityGroup"})
-	c.Assert(req.Form["GroupName"], DeepEquals, []string{"websrv"})
-	c.Assert(req.Form["GroupDescription"], DeepEquals, []string{"Web Servers"})
+	c.Assert(req.Form["GroupName"], DeepEquals, []string{name})
+	c.Assert(req.Form["GroupDescription"], DeepEquals, []string{description})
+	if vpcId != "" {
+		c.Assert(req.Form["VpcId"], DeepEquals, []string{vpcId})
+	}
 
-	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
-	c.Assert(resp.Name, Equals, "websrv")
-	c.Assert(resp.Id, Equals, "sg-67ad940e")
+	c.Assert(resp.Name, Equals, name)
+	c.Assert(resp.Id, Equals, id)
+}
+
+func (s *S) TestCreateSecurityGroupExample(c *C) {
+	testServer.Response(200, nil, CreateSecurityGroupExample)
+	resp, err := s.ec2.CreateSecurityGroup("websrv", "Web Servers")
+	c.Assert(err, IsNil)
+	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "")
+
+	testServer.Response(200, nil, CreateSecurityGroupExample)
+	resp, err = s.ec2.CreateSecurityGroupVPC("vpc-id", "websrv", "Web Servers")
+	c.Assert(err, IsNil)
+	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "vpc-id")
 }
 
 func (s *S) TestDescribeSecurityGroupsExample(c *C) {
