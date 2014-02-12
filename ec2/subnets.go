@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2014 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2
 
@@ -42,14 +40,14 @@ type CreateSubnetResp struct {
 // The vpcId and cidrBlock parameters specify the VPC id and CIDR
 // block respectively - these cannot be changed after creation. The
 // subnet's CIDR block can be the same as the VPC's CIDR block
-// (assuming you want only a single subnet in the VPC), or a subset of
-// the VPC's CIDR block. If more than one subnet is created in a VPC,
-// their CIDR blocks must not overlap. The smallest subnet (and VPC)
-// that can be created uses a /28 netmask (16 IP addresses), and the
-// largest uses a /16 netmask (65,536 IP addresses).
+// (assuming a single subnet is wanted), or a subset of the VPC's CIDR
+// block. If more than one subnet is created in a VPC, their CIDR
+// blocks must not overlap. The smallest subnet (and VPC) that can be
+// created uses a /28 netmask (16 IP addresses), and the largest uses
+// a /16 netmask (65,536 IP addresses).
 //
-// availZone may be empty, in which case Amazon EC2 selects one for
-// you (recommended).
+// availZone may be empty, an availability zone is automatically
+// selected.
 //
 // See http://goo.gl/wLPhfI for more details.
 func (ec2 *EC2) CreateSubnet(vpcId, cidrBlock, availZone string) (resp *CreateSubnetResp, err error) {
@@ -90,9 +88,9 @@ type SubnetsResp struct {
 	Subnets   []Subnet `xml:"subnetSet>item"`
 }
 
-// Subnets describes one or more of your subnets. Both parameters are
-// optional, and if specified will limit the returned subnets to the
-// matching ids or filtering rules.
+// Subnets returns one or more subnets. Both parameters are optional,
+// and if specified will limit the returned subnets to the matching
+// ids or filtering rules.
 //
 // See http://goo.gl/NTKQVI for more details.
 func (ec2 *EC2) Subnets(ids []string, filter *Filter) (resp *SubnetsResp, err error) {
