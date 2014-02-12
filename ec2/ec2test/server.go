@@ -1108,7 +1108,7 @@ func (srv *Server) createSubnet(w http.ResponseWriter, req *http.Request, reqId 
 	s := &subnet{ec2.Subnet{
 		Id:               fmt.Sprintf("subnet-%d", srv.subnetId.next()),
 		VPCId:            v.Id,
-		State:            ec2.AvailableState,
+		State:            "available",
 		CIDRBlock:        cidrBlock,
 		AvailZone:        availZone,
 		AvailableIPCount: availIPs,
