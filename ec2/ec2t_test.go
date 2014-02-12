@@ -98,9 +98,16 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 	}
 	c.Check(masked(inst.IPAddress), Equals, "8.0.0.0")
 	c.Check(masked(inst.PrivateIPAddress), Equals, "127.0.0.0")
-	c.Check(inst.DNSName, Equals, id+".testing.invalid")
+	// DNSName is empty initially, to check it we need to refresh.
+	c.Check(inst.DNSName, Equals, "")
 	c.Check(inst.PrivateDNSName, Equals, id+".internal.invalid")
 
+	// Get the instance again to verify DNSName.
+	resp, err := s.ec2.Instances([]string{id}, nil)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Reservations, HasLen, 1)
+	c.Assert(resp.Reservations[0].Instances, HasLen, 1)
+	c.Check(resp.Reservations[0].Instances[0].DNSName, Equals, id+".testing.invalid")
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
