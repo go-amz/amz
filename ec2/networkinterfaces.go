@@ -27,17 +27,6 @@ type NetworkInterfaceAttachment struct {
 	DeleteOnTermination bool   `xml:"deleteOnTermination"`
 }
 
-const (
-	// Common status values for network interfaces / attachments.
-	AvailableStatus = "available"
-	AttachingStatus = "attaching"
-	AttachedStatus  = "attached"
-	PendingStatus   = "pending"
-	InUseStatus     = "in-use"
-	DetachingStatus = "detaching"
-	DetachedStatus  = "detached"
-)
-
 // PrivateIP describes a private IP address of a network interface.
 //
 // See http://goo.gl/jtuQEJ for more details.

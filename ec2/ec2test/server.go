@@ -1307,7 +1307,7 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 		AvailZone:        s.AvailZone,
 		Description:      desc,
 		OwnerId:          ownerId,
-		Status:           ec2.AvailableStatus,
+		Status:           "available",
 		MACAddress:       fmt.Sprintf("%02d:81:60:cb:27:37", srv.ifaceId),
 		PrivateIPAddress: primaryIP,
 		SourceDestCheck:  true,
@@ -1366,7 +1366,7 @@ func (srv *Server) attachIFace(w http.ResponseWriter, req *http.Request, reqId s
 		InstanceId:          inst.id(),
 		InstanceOwnerId:     ownerId,
 		DeviceIndex:         devIndex,
-		Status:              ec2.InUseStatus,
+		Status:              "in-use",
 		AttachTime:          time.Now().Format(time.RFC3339),
 		DeleteOnTermination: true,
 	}}
