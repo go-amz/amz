@@ -204,7 +204,7 @@ func addParamsList(params map[string]string, label string, ids []string) {
 // ----------------------------------------------------------------------------
 // Instance management functions and types.
 
-// NetworkInterfaceSpec encapsulates options for a single network
+// RunNetworkInterface encapsulates options for a single network
 // interface, specified when calling RunInstances.
 //
 // If Id is set, it must match an existing VPC network interface, and
@@ -220,19 +220,19 @@ func addParamsList(params map[string]string, label string, ids []string) {
 // primary. If none are given, EC2 selects a primary IP for each
 // created interface from the subnet pool.
 //
-// When SecondaryPrivateIPsCount is non-zero, EC2 allocates that
-// number of IP addresses from within the subnet range and sets them
-// as secondary IPs. The number of IP addresses you can assign to a
+// When SecondaryPrivateIPCount is non-zero, EC2 allocates that number
+// of IP addresses from within the subnet range and sets them as
+// secondary IPs. The number of IP addresses that can be assigned to a
 // network interface varies by instance type.
-type NetworkInterfaceSpec struct {
-	Id                       string
-	DeviceIndex              int
-	SubnetId                 string
-	Description              string
-	PrivateIPs               []PrivateIP
-	SecurityGroupIds         []string
-	DeleteOnTermination      bool
-	SecondaryPrivateIPsCount int
+type RunNetworkInterface struct {
+	Id                      string
+	DeviceIndex             int
+	SubnetId                string
+	Description             string
+	PrivateIPs              []PrivateIP
+	SecurityGroupIds        []string
+	DeleteOnTermination     bool
+	SecondaryPrivateIPCount int
 }
 
 // The RunInstances type encapsulates options for the respective request in EC2.
@@ -256,7 +256,7 @@ type RunInstances struct {
 	ShutdownBehavior      string
 	PrivateIPAddress      string
 	BlockDeviceMappings   []BlockDeviceMapping
-	NetworkInterfaces     []NetworkInterfaceSpec
+	NetworkInterfaces     []RunNetworkInterface
 }
 
 // Response to a RunInstances request.
@@ -304,14 +304,7 @@ type Instance struct {
 //
 // See http://goo.gl/Mcm3b for more details.
 func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err error) {
-	var params map[string]string
-	if options.SubnetId != "" || len(options.NetworkInterfaces) > 0 {
-		// When either SubnetId or NetworkInterfaces are specified, we
-		// need to use the API version with complete VPC support.
-		params = makeParamsVPC("RunInstances")
-	} else {
-		params = makeParams("RunInstances")
-	}
+	params := prepareRunParams(*options)
 	params["ImageId"] = options.ImageId
 	params["InstanceType"] = options.InstanceType
 	var min, max int
@@ -337,65 +330,8 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 			j++
 		}
 	}
-	for i, b := range options.BlockDeviceMappings {
-		n := strconv.Itoa(i + 1)
-		prefix := "BlockDeviceMapping." + n
-		if b.DeviceName != "" {
-			params[prefix+".DeviceName"] = b.DeviceName
-		}
-		if b.VirtualName != "" {
-			params[prefix+".VirtualName"] = b.VirtualName
-		}
-		if b.SnapshotId != "" {
-			params[prefix+".Ebs.SnapshotId"] = b.SnapshotId
-		}
-		if b.VolumeType != "" {
-			params[prefix+".Ebs.VolumeType"] = b.VolumeType
-		}
-		if b.VolumeSize > 0 {
-			params[prefix+".Ebs.VolumeSize"] = strconv.FormatInt(b.VolumeSize, 10)
-		}
-		if b.IOPS > 0 {
-			params[prefix+".Ebs.Iops"] = strconv.FormatInt(b.IOPS, 10)
-		}
-		if b.DeleteOnTermination {
-			params[prefix+".Ebs.DeleteOnTermination"] = "true"
-		}
-	}
-	for i, ni := range options.NetworkInterfaces {
-		// Unlike other lists, NetworkInterface and PrivateIpAddresses
-		// should start from 0, not 1, according to the examples
-		// requests in the API documentation here http://goo.gl/Mcm3b.
-		n := strconv.Itoa(i)
-		prefix := "NetworkInterface." + n
-		if ni.Id != "" {
-			params[prefix+".NetworkInterfaceId"] = ni.Id
-		}
-		params[prefix+".DeviceIndex"] = strconv.Itoa(ni.DeviceIndex)
-		if ni.SubnetId != "" {
-			params[prefix+".SubnetId"] = ni.SubnetId
-		}
-		if ni.Description != "" {
-			params[prefix+".Description"] = ni.Description
-		}
-		for j, gid := range ni.SecurityGroupIds {
-			k := strconv.Itoa(j + 1)
-			params[prefix+".SecurityGroupId."+k] = gid
-		}
-		if ni.DeleteOnTermination {
-			params[prefix+".DeleteOnTermination"] = "true"
-		}
-		if ni.SecondaryPrivateIPsCount > 0 {
-			val := strconv.Itoa(ni.SecondaryPrivateIPsCount)
-			params[prefix+".SecondaryPrivateIpAddressCount"] = val
-		}
-		for j, ip := range ni.PrivateIPs {
-			k := strconv.Itoa(j)
-			subprefix := prefix + ".PrivateIpAddresses." + k
-			params[subprefix+".PrivateIpAddress"] = ip.Address
-			params[subprefix+".Primary"] = strconv.FormatBool(ip.IsPrimary)
-		}
-	}
+	prepareBlockDevices(params, options.BlockDeviceMappings)
+	prepareNetworkInterfaces(params, options.NetworkInterfaces)
 	token, err := clientToken()
 	if err != nil {
 		return nil, err
@@ -444,6 +380,81 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		return nil, err
 	}
 	return
+}
+
+func prepareRunParams(options RunInstances) map[string]string {
+	if options.SubnetId != "" || len(options.NetworkInterfaces) > 0 {
+		// When either SubnetId or NetworkInterfaces are specified, we
+		// need to use the API version with complete VPC support.
+		return makeParamsVPC("RunInstances")
+	} else {
+		return makeParams("RunInstances")
+	}
+}
+
+func prepareBlockDevices(params map[string]string, blockDevs []BlockDeviceMapping) {
+	for i, b := range blockDevs {
+		n := strconv.Itoa(i + 1)
+		prefix := "BlockDeviceMapping." + n
+		if b.DeviceName != "" {
+			params[prefix+".DeviceName"] = b.DeviceName
+		}
+		if b.VirtualName != "" {
+			params[prefix+".VirtualName"] = b.VirtualName
+		}
+		if b.SnapshotId != "" {
+			params[prefix+".Ebs.SnapshotId"] = b.SnapshotId
+		}
+		if b.VolumeType != "" {
+			params[prefix+".Ebs.VolumeType"] = b.VolumeType
+		}
+		if b.VolumeSize > 0 {
+			params[prefix+".Ebs.VolumeSize"] = strconv.FormatInt(b.VolumeSize, 10)
+		}
+		if b.IOPS > 0 {
+			params[prefix+".Ebs.Iops"] = strconv.FormatInt(b.IOPS, 10)
+		}
+		if b.DeleteOnTermination {
+			params[prefix+".Ebs.DeleteOnTermination"] = "true"
+		}
+	}
+}
+
+func prepareNetworkInterfaces(params map[string]string, nics []RunNetworkInterface) {
+	for i, ni := range nics {
+		// Unlike other lists, NetworkInterface and PrivateIpAddresses
+		// should start from 0, not 1, according to the examples
+		// requests in the API documentation here http://goo.gl/Mcm3b.
+		n := strconv.Itoa(i)
+		prefix := "NetworkInterface." + n
+		if ni.Id != "" {
+			params[prefix+".NetworkInterfaceId"] = ni.Id
+		}
+		params[prefix+".DeviceIndex"] = strconv.Itoa(ni.DeviceIndex)
+		if ni.SubnetId != "" {
+			params[prefix+".SubnetId"] = ni.SubnetId
+		}
+		if ni.Description != "" {
+			params[prefix+".Description"] = ni.Description
+		}
+		for j, gid := range ni.SecurityGroupIds {
+			k := strconv.Itoa(j + 1)
+			params[prefix+".SecurityGroupId."+k] = gid
+		}
+		if ni.DeleteOnTermination {
+			params[prefix+".DeleteOnTermination"] = "true"
+		}
+		if ni.SecondaryPrivateIPCount > 0 {
+			val := strconv.Itoa(ni.SecondaryPrivateIPCount)
+			params[prefix+".SecondaryPrivateIpAddressCount"] = val
+		}
+		for j, ip := range ni.PrivateIPs {
+			k := strconv.Itoa(j)
+			subprefix := prefix + ".PrivateIpAddresses." + k
+			params[subprefix+".PrivateIpAddress"] = ip.Address
+			params[subprefix+".Primary"] = strconv.FormatBool(ip.IsPrimary)
+		}
+	}
 }
 
 func clientToken() (string, error) {
