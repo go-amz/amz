@@ -55,7 +55,7 @@ func (s *S) TestCreateNetworkInterfaceExample(c *C) {
 	c.Check(iface.Description, Equals, "")
 	c.Check(iface.OwnerId, Equals, "251839141158")
 	c.Check(iface.RequesterManaged, Equals, false)
-	c.Check(iface.Status, Equals, ec2.AvailableStatus)
+	c.Check(iface.Status, Equals, "available")
 	c.Check(iface.MACAddress, Equals, "02:74:b0:72:79:61")
 	c.Check(iface.PrivateIPAddress, Equals, "10.0.2.157")
 	c.Check(iface.SourceDestCheck, Equals, true)
@@ -103,7 +103,7 @@ func (s *S) TestNetworkInterfacesExample(c *C) {
 	c.Check(iface.Description, Equals, "")
 	c.Check(iface.OwnerId, Equals, "053230519467")
 	c.Check(iface.RequesterManaged, Equals, false)
-	c.Check(iface.Status, Equals, ec2.InUseStatus)
+	c.Check(iface.Status, Equals, "in-use")
 	c.Check(iface.MACAddress, Equals, "02:81:60:cb:27:37")
 	c.Check(iface.PrivateIPAddress, Equals, "10.0.0.146")
 	c.Check(iface.SourceDestCheck, Equals, true)
@@ -115,7 +115,7 @@ func (s *S) TestNetworkInterfacesExample(c *C) {
 		InstanceId:          "i-22197876",
 		InstanceOwnerId:     "053230519467",
 		DeviceIndex:         0,
-		Status:              ec2.AttachedStatus,
+		Status:              "attached",
 		AttachTime:          "2012-07-01T21:45:27.000Z",
 		DeleteOnTermination: true,
 	})
@@ -146,7 +146,7 @@ func (s *S) TestNetworkInterfacesExample(c *C) {
 		InstanceId:          "i-886401dc",
 		InstanceOwnerId:     "053230519467",
 		DeviceIndex:         0,
-		Status:              ec2.AttachedStatus,
+		Status:              "attached",
 		AttachTime:          "2012-06-27T20:08:44.000Z",
 		DeleteOnTermination: true,
 	})
@@ -318,7 +318,7 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 	c.Check(att.Id, Equals, attResp.AttachmentId)
 	c.Check(att.InstanceId, Equals, instId)
 	c.Check(att.DeviceIndex, Equals, 1)
-	c.Check(att.Status, Matches, "("+ec2.AttachingStatus+"|"+ec2.InUseStatus+")")
+	c.Check(att.Status, Matches, "(attaching|in-use)")
 
 	_, err = s.ec2.DetachNetworkInterface(att.Id, true)
 	c.Check(err, IsNil)
@@ -346,12 +346,7 @@ func assertNetworkInterface(c *C, obtained ec2.NetworkInterface, expectId, expec
 	} else {
 		c.Check(obtained.Id, Matches, `^eni-[0-9a-f]+$`)
 	}
-	statusRegExp := "(" +
-		ec2.AvailableStatus + "|" +
-		ec2.PendingStatus + "|" +
-		ec2.InUseStatus +
-		")"
-	c.Check(obtained.Status, Matches, statusRegExp)
+	c.Check(obtained.Status, Matches, "(available|pending|in-use)")
 	if expectSubId != "" {
 		c.Check(obtained.SubnetId, Equals, expectSubId)
 	} else {

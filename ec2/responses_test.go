@@ -905,3 +905,19 @@ var DetachNetworkInterfaceExample = `
     <return>true</return>
 </DetachNetworkInterfaceResponse>
 `
+
+// http://goo.gl/MoeH0L
+var AssignPrivateIpAddressesExample = `
+<AssignPrivateIpAddresses xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+   <return>true</return>
+</AssignPrivateIpAddresses>
+`
+
+// http://goo.gl/RjGZdB
+var UnassignPrivateIpAddressesExample = `
+<UnassignPrivateIpAddresses xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+   <return>true</return>
+</UnassignPrivateIpAddresses>
+`
