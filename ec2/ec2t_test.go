@@ -138,7 +138,7 @@ type ServerTests struct {
 
 func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	_, err := e.TerminateInstances(ids)
-	c.Assert(err, IsNil, Commentf("%d INSTANCES LEFT RUNNING!!!", ids))
+	c.Assert(err, IsNil, Commentf("%v INSTANCES LEFT RUNNING!!!", ids))
 	// We need to wait until the instances are really off, because
 	// entities that depend on them won't be deleted (i.e. groups,
 	// NICs, subnets, etc.)
@@ -548,7 +548,7 @@ func (s *AmazonServerSuite) TestRunInstancesVPC(c *C) {
 		MinCount:     1,
 		ImageId:      imageId,
 		InstanceType: "t1.micro",
-		NetworkInterfaces: []ec2.NetworkInterfaceSpec{{
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
 			DeviceIndex:         0,
 			SubnetId:            subId,
 			PrivateIPs:          ips,

@@ -105,16 +105,16 @@ func (s *S) TestRunInstancesExample(c *C) {
 			DeleteOnTermination: true,
 			IOPS:                1000,
 		}},
-		NetworkInterfaces: []ec2.NetworkInterfaceSpec{{
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
 			DeviceIndex: 0,
 			SubnetId:    "subnet-id",
 			Description: "eth0",
 			PrivateIPs: []ec2.PrivateIP{
 				{Address: "10.0.0.25", IsPrimary: true},
 			},
-			DeleteOnTermination:      true,
-			SecurityGroupIds:         []string{"sg-1", "sg-2"},
-			SecondaryPrivateIPsCount: 2,
+			DeleteOnTermination:     true,
+			SecurityGroupIds:        []string{"sg-1", "sg-2"},
+			SecondaryPrivateIPCount: 2,
 		}, {
 			Id:          "eni-id",
 			DeviceIndex: 1,
@@ -127,6 +127,11 @@ func (s *S) TestRunInstancesExample(c *C) {
 			}},
 		}},
 	}
+	params := ec2.PrepareRunParams(options)
+	c.Assert(params, DeepEquals, map[string]string{
+		"Version": "2013-10-15",
+		"Action":  "RunInstances",
+	})
 	resp, err := s.ec2.RunInstances(&options)
 
 	req := testServer.WaitRequest()
