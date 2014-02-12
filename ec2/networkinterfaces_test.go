@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2014 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2_test
 

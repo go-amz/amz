@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2014 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2
 
@@ -49,7 +47,7 @@ type PrivateIP struct {
 	IsPrimary bool   `xml:"primary"`
 }
 
-// NetworkInterface describes a network interface for AWS VPC.
+// NetworkInterface describes a network interface for VPC.
 //
 // See http://goo.gl/G63OQL for more details.
 type NetworkInterface struct {
@@ -75,24 +73,25 @@ type NetworkInterface struct {
 // NetworkInterfaceOptions encapsulates options for the
 // CreateNetworkInterface call.
 //
-// Only the SubnetId is required, the rest are optional.
+// SubnetId is the only required field.
 //
 // One or more private IP addresses can be specified by using the
-// PrivateIPs slice. Only one of them can be set as primary.
+// PrivateIPs slice. Only one provided PrivateIP may be set as
+// primary.
 //
 // If PrivateIPs is empty, EC2 selects a primary private IP from the
 // subnet range.
 //
-// When SecondaryPrivateIPsCount is non-zero, EC2 allocates that
+// When SecondaryPrivateIPCount is non-zero, EC2 allocates that
 // number of IP addresses from within the subnet range.  The number of
 // IP addresses you can assign to a network interface varies by
 // instance type.
 type NetworkInterfaceOptions struct {
-	SubnetId                 string
-	PrivateIPs               []PrivateIP
-	SecondaryPrivateIPsCount int
-	Description              string
-	SecurityGroupIds         []string
+	SubnetId                string
+	PrivateIPs              []PrivateIP
+	SecondaryPrivateIPCount int
+	Description             string
+	SecurityGroupIds        []string
 }
 
 // CreateNetworkInterfaceResp is the response to a
@@ -119,8 +118,8 @@ func (ec2 *EC2) CreateNetworkInterface(opts NetworkInterfaceOptions) (resp *Crea
 	if opts.Description != "" {
 		params["Description"] = opts.Description
 	}
-	if opts.SecondaryPrivateIPsCount > 0 {
-		count := strconv.Itoa(opts.SecondaryPrivateIPsCount)
+	if opts.SecondaryPrivateIPCount > 0 {
+		count := strconv.Itoa(opts.SecondaryPrivateIPCount)
 		params["SecondaryPrivateIpAddressCount"] = count
 	}
 	for i, groupId := range opts.SecurityGroupIds {
@@ -158,9 +157,10 @@ type NetworkInterfacesResp struct {
 	Interfaces []NetworkInterface `xml:"networkInterfaceSet>item"`
 }
 
-// NetworkInterfaces describes one or more network interfaces. Both
-// parameters are optional, and if specified will limit the returned
-// interfaces to the matching ids or filtering rules.
+// NetworkInterfaces returns a list of network interfaces.
+//
+// If the ids or filter parameters are provided, only matching
+// interfaces are returned.
 //
 // See http://goo.gl/2LcXtM for more details.
 func (ec2 *EC2) NetworkInterfaces(ids []string, filter *Filter) (resp *NetworkInterfacesResp, err error) {

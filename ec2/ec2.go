@@ -636,8 +636,8 @@ type CreateSecurityGroupResp struct {
 	RequestId string `xml:"requestId"`
 }
 
-// CreateSecurityGroup runs a CreateSecurityGroup request in EC2, with
-// the provided name and description.
+// CreateSecurityGroup creates a security group with the provided name
+// and description.
 //
 // See http://goo.gl/Eo7Yl for more details.
 func (ec2 *EC2) CreateSecurityGroup(name, description string) (resp *CreateSecurityGroupResp, err error) {
