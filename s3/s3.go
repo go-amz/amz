@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2011 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package s3
 
