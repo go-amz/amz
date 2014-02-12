@@ -70,7 +70,7 @@ type NetworkInterface struct {
 	PrivateIPs       []PrivateIP                `xml:"privateIpAddressesSet>item"`
 }
 
-// NetworkInterfaceOptions encapsulates options for the
+// CreateNetworkInterface encapsulates options for the
 // CreateNetworkInterface call.
 //
 // SubnetId is the only required field.
@@ -86,7 +86,7 @@ type NetworkInterface struct {
 // number of IP addresses from within the subnet range.  The number of
 // IP addresses you can assign to a network interface varies by
 // instance type.
-type NetworkInterfaceOptions struct {
+type CreateNetworkInterface struct {
 	SubnetId                string
 	PrivateIPs              []PrivateIP
 	SecondaryPrivateIPCount int
@@ -107,7 +107,7 @@ type CreateNetworkInterfaceResp struct {
 // subnet.
 //
 // See http://goo.gl/ze3VhA for more details.
-func (ec2 *EC2) CreateNetworkInterface(opts NetworkInterfaceOptions) (resp *CreateNetworkInterfaceResp, err error) {
+func (ec2 *EC2) CreateNetworkInterface(opts CreateNetworkInterface) (resp *CreateNetworkInterfaceResp, err error) {
 	params := makeParamsVPC("CreateNetworkInterface")
 	params["SubnetId"] = opts.SubnetId
 	for i, ip := range opts.PrivateIPs {

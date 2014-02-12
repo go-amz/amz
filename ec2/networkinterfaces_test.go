@@ -20,7 +20,7 @@ import (
 func (s *S) TestCreateNetworkInterfaceExample(c *C) {
 	testServer.Response(200, nil, CreateNetworkInterfaceExample)
 
-	resp, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
+	resp, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{
 		SubnetId: "subnet-b2a249da",
 		PrivateIPs: []ec2.PrivateIP{
 			{Address: "10.0.2.157", IsPrimary: true},
@@ -215,7 +215,7 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 	defer s.ec2.TerminateInstances([]string{instId})
 
 	ips1 := []ec2.PrivateIP{{Address: "10.3.1.10", IsPrimary: true}}
-	resp1, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
+	resp1, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{
 		SubnetId:    subId,
 		PrivateIPs:  ips1,
 		Description: "My first iface",
@@ -229,7 +229,7 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 		{Address: "10.3.1.20", IsPrimary: true},
 		{Address: "10.3.1.22", IsPrimary: false},
 	}
-	resp2, err := s.ec2.CreateNetworkInterface(ec2.NetworkInterfaceOptions{
+	resp2, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{
 		SubnetId:         subId,
 		PrivateIPs:       ips2,
 		SecurityGroupIds: []string{sg.Id},
