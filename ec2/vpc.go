@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2014 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2
 
@@ -14,20 +12,7 @@ import (
 	"strconv"
 )
 
-const (
-	// Supported values for VPC state.
-	PendingState   = "pending"
-	AvailableState = "available"
-
-	// Supported values for InstanceTenancy.
-	DefaultTenancy   = "default"
-	DedicatedTenancy = "dedicated"
-
-	// AWS API version used for VPC-related calls.
-	vpcAPIVersion = "2013-10-15"
-)
-
-// VPC describes an Amazon Virtual Private Cloud (VPC).
+// VPC describes a Virtual Private Cloud (VPC).
 //
 // See http://goo.gl/Uy6ZLL for more details.
 type VPC struct {
@@ -55,14 +40,14 @@ type CreateVPCResp struct {
 // addresses).
 //
 // The instanceTenancy value holds the tenancy options for instances
-// launched into the VPC - either DefaultTenancy or DedicatedTenancy.
+// launched into the VPC - either "default" or "dedicated".
 //
 // See http://goo.gl/nkwjvN for more details.
 func (ec2 *EC2) CreateVPC(CIDRBlock, instanceTenancy string) (resp *CreateVPCResp, err error) {
 	params := makeParamsVPC("CreateVpc")
 	params["CidrBlock"] = CIDRBlock
 	if instanceTenancy == "" {
-		instanceTenancy = DefaultTenancy
+		instanceTenancy = "default"
 	}
 	params["InstanceTenancy"] = instanceTenancy
 	resp = &CreateVPCResp{}

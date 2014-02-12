@@ -1085,14 +1085,14 @@ func (srv *Server) createVpc(w http.ResponseWriter, req *http.Request, reqId str
 	cidrBlock := parseCidr(req.Form.Get("CidrBlock"))
 	tenancy := req.Form.Get("InstanceTenancy")
 	if tenancy == "" {
-		tenancy = ec2.DefaultTenancy
+		tenancy = "default"
 	}
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	v := &vpc{ec2.VPC{
 		Id:              fmt.Sprintf("vpc-%d", srv.vpcId.next()),
-		State:           ec2.AvailableState,
+		State:           "available",
 		CIDRBlock:       cidrBlock,
 		DHCPOptionsId:   fmt.Sprintf("dopt-%d", srv.dhcpOptsId.next()),
 		InstanceTenancy: tenancy,
