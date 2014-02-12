@@ -160,7 +160,7 @@ func (s *ServerTests) deleteVPCs(c *C, ids []string) {
 		c.Logf("deleting VPCs %v", ids)
 		for _, id := range ids {
 			_, err := s.ec2.DeleteVPC(id)
-			if err == nil || s.errorCode(err) == "InvalidVpcID.NotFound" {
+			if err == nil || errorCode(err) == "InvalidVpcID.NotFound" {
 				c.Logf("VPC %s deleted", id)
 				deleted++
 				continue

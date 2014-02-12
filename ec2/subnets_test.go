@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2014 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2_test
 
@@ -71,7 +69,7 @@ func (s *S) TestSubnetsExample(c *C) {
 	c.Check(resp.Subnets, HasLen, 2)
 	subnet := resp.Subnets[0]
 	c.Check(subnet.Id, Equals, "subnet-9d4a7b6c")
-	c.Check(subnet.State, Equals, ec2.AvailableState)
+	c.Check(subnet.State, Equals, "available")
 	c.Check(subnet.VPCId, Equals, "vpc-1a2b3c4d")
 	c.Check(subnet.CIDRBlock, Equals, "10.0.1.0/24")
 	c.Check(subnet.AvailableIPCount, Equals, 251)
@@ -81,7 +79,7 @@ func (s *S) TestSubnetsExample(c *C) {
 	c.Check(subnet.Tags, HasLen, 0)
 	subnet = resp.Subnets[1]
 	c.Check(subnet.Id, Equals, "subnet-6e7f829e")
-	c.Check(subnet.State, Equals, ec2.AvailableState)
+	c.Check(subnet.State, Equals, "available")
 	c.Check(subnet.VPCId, Equals, "vpc-1a2b3c4d")
 	c.Check(subnet.CIDRBlock, Equals, "10.0.0.0/24")
 	c.Check(subnet.AvailableIPCount, Equals, 251)
@@ -181,7 +179,7 @@ func (s *ServerTests) createSubnet(c *C, vpcId, cidrBlock, availZone string) *ec
 	}
 	for a := testAttempt.Start(); a.Next(); {
 		resp, err := s.ec2.CreateSubnet(vpcId, cidrBlock, availZone)
-		if s.errorCode(err) == "InvalidVpcID.NotFound" {
+		if errorCode(err) == "InvalidVpcID.NotFound" {
 			c.Logf("VPC %v not created yet; retrying", vpcId)
 			continue
 		}
@@ -208,7 +206,7 @@ func (s *ServerTests) deleteSubnets(c *C, ids []string) {
 		c.Logf("deleting subnets %v", ids)
 		for _, id := range ids {
 			_, err := s.ec2.DeleteSubnet(id)
-			if err == nil || s.errorCode(err) == "InvalidSubnetID.NotFound" {
+			if err == nil || errorCode(err) == "InvalidSubnetID.NotFound" {
 				c.Logf("subnet %s deleted", id)
 				deleted++
 				continue
@@ -231,7 +229,7 @@ func assertSubnet(c *C, obtained ec2.Subnet, expectId, expectVpcId, expectCidr s
 	} else {
 		c.Check(obtained.Id, Matches, `^subnet-[0-9a-f]+$`)
 	}
-	c.Check(obtained.State, Matches, "("+ec2.AvailableState+"|"+ec2.PendingState+")")
+	c.Check(obtained.State, Matches, "(available|pending)")
 	if expectVpcId != "" {
 		c.Check(obtained.VPCId, Equals, expectVpcId)
 	} else {
