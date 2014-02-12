@@ -212,7 +212,7 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 	inst := instList.Instances[0]
 	c.Assert(inst, NotNil)
 	instId := inst.InstanceId
-	defer s.ec2.TerminateInstances([]string{instId})
+	defer terminateInstances(c, s.ec2, []string{instId})
 
 	ips1 := []ec2.PrivateIP{{Address: "10.3.1.10", IsPrimary: true}}
 	resp1, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{

@@ -204,6 +204,37 @@ func addParamsList(params map[string]string, label string, ids []string) {
 // ----------------------------------------------------------------------------
 // Instance management functions and types.
 
+// RunNetworkInterface encapsulates options for a single network
+// interface, specified when calling RunInstances.
+//
+// If Id is set, it must match an existing VPC network interface, and
+// in this case only a single instance can be launched. If Id is not
+// set, a new network interface will be created for each instance.
+//
+// The following fields are required when creating a new network
+// interface (i.e. Id is empty): DeviceIndex, SubnetId, Description
+// (only used if set), SecurityGroupIds.
+//
+// PrivateIPs can be used to add one or more private IP addresses to a
+// network interface. Only one of the IP addresses can be set as
+// primary. If none are given, EC2 selects a primary IP for each
+// created interface from the subnet pool.
+//
+// When SecondaryPrivateIPCount is non-zero, EC2 allocates that number
+// of IP addresses from within the subnet range and sets them as
+// secondary IPs. The number of IP addresses that can be assigned to a
+// network interface varies by instance type.
+type RunNetworkInterface struct {
+	Id                      string
+	DeviceIndex             int
+	SubnetId                string
+	Description             string
+	PrivateIPs              []PrivateIP
+	SecurityGroupIds        []string
+	DeleteOnTermination     bool
+	SecondaryPrivateIPCount int
+}
+
 // The RunInstances type encapsulates options for the respective request in EC2.
 //
 // See http://goo.gl/Mcm3b for more details.
@@ -225,6 +256,7 @@ type RunInstances struct {
 	ShutdownBehavior      string
 	PrivateIPAddress      string
 	BlockDeviceMappings   []BlockDeviceMapping
+	NetworkInterfaces     []RunNetworkInterface
 }
 
 // Response to a RunInstances request.
@@ -242,33 +274,37 @@ type RunInstancesResp struct {
 //
 // See http://goo.gl/OCH8a for more details.
 type Instance struct {
-	InstanceId         string          `xml:"instanceId"`
-	InstanceType       string          `xml:"instanceType"`
-	ImageId            string          `xml:"imageId"`
-	PrivateDNSName     string          `xml:"privateDnsName"`
-	DNSName            string          `xml:"dnsName"`
-	IPAddress          string          `xml:"ipAddress"`
-	PrivateIPAddress   string          `xml:"privateIpAddress"`
-	KeyName            string          `xml:"keyName"`
-	AMILaunchIndex     int             `xml:"amiLaunchIndex"`
-	Hypervisor         string          `xml:"hypervisor"`
-	VirtType           string          `xml:"virtualizationType"`
-	Monitoring         string          `xml:"monitoring>state"`
-	AvailZone          string          `xml:"placement>availabilityZone"`
-	PlacementGroupName string          `xml:"placement>groupName"`
-	State              InstanceState   `xml:"instanceState"`
-	Tags               []Tag           `xml:"tagSet>item"`
-	SecurityGroups     []SecurityGroup `xml:"groupSet>item"`
+	InstanceId         string             `xml:"instanceId"`
+	InstanceType       string             `xml:"instanceType"`
+	ImageId            string             `xml:"imageId"`
+	PrivateDNSName     string             `xml:"privateDnsName"`
+	DNSName            string             `xml:"dnsName"`
+	IPAddress          string             `xml:"ipAddress"`
+	PrivateIPAddress   string             `xml:"privateIpAddress"`
+	SubnetId           string             `xml:"subnetId"`
+	VPCId              string             `xml:"vpcId"`
+	SourceDestCheck    bool               `xml:"sourceDestCheck"`
+	KeyName            string             `xml:"keyName"`
+	AMILaunchIndex     int                `xml:"amiLaunchIndex"`
+	Hypervisor         string             `xml:"hypervisor"`
+	VirtType           string             `xml:"virtualizationType"`
+	Monitoring         string             `xml:"monitoring>state"`
+	AvailZone          string             `xml:"placement>availabilityZone"`
+	PlacementGroupName string             `xml:"placement>groupName"`
+	State              InstanceState      `xml:"instanceState"`
+	Tags               []Tag              `xml:"tagSet>item"`
+	SecurityGroups     []SecurityGroup    `xml:"groupSet>item"`
+	NetworkInterfaces  []NetworkInterface `xml:"networkInterfaceSet>item"`
 }
 
 // RunInstances starts new instances in EC2.
 // If options.MinCount and options.MaxCount are both zero, a single instance
 // will be started; otherwise if options.MaxCount is zero, options.MinCount
-// will be used insteead.
+// will be used instead.
 //
 // See http://goo.gl/Mcm3b for more details.
 func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err error) {
-	params := makeParams("RunInstances")
+	params := prepareRunParams(*options)
 	params["ImageId"] = options.ImageId
 	params["InstanceType"] = options.InstanceType
 	var min, max int
@@ -294,30 +330,8 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 			j++
 		}
 	}
-	for i, b := range options.BlockDeviceMappings {
-		n := strconv.Itoa(i + 1)
-		if b.DeviceName != "" {
-			params["BlockDeviceMapping."+n+".DeviceName"] = b.DeviceName
-		}
-		if b.VirtualName != "" {
-			params["BlockDeviceMapping."+n+".VirtualName"] = b.VirtualName
-		}
-		if b.SnapshotId != "" {
-			params["BlockDeviceMapping."+n+".Ebs.SnapshotId"] = b.SnapshotId
-		}
-		if b.VolumeType != "" {
-			params["BlockDeviceMapping."+n+".Ebs.VolumeType"] = b.VolumeType
-		}
-		if b.VolumeSize > 0 {
-			params["BlockDeviceMapping."+n+".Ebs.VolumeSize"] = strconv.FormatInt(b.VolumeSize, 10)
-		}
-		if b.IOPS > 0 {
-			params["BlockDeviceMapping."+n+".Ebs.Iops"] = strconv.FormatInt(b.IOPS, 10)
-		}
-		if b.DeleteOnTermination {
-			params["BlockDeviceMapping."+n+".Ebs.DeleteOnTermination"] = "true"
-		}
-	}
+	prepareBlockDevices(params, options.BlockDeviceMappings)
+	prepareNetworkInterfaces(params, options.NetworkInterfaces)
 	token, err := clientToken()
 	if err != nil {
 		return nil, err
@@ -366,6 +380,81 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		return nil, err
 	}
 	return
+}
+
+func prepareRunParams(options RunInstances) map[string]string {
+	if options.SubnetId != "" || len(options.NetworkInterfaces) > 0 {
+		// When either SubnetId or NetworkInterfaces are specified, we
+		// need to use the API version with complete VPC support.
+		return makeParamsVPC("RunInstances")
+	} else {
+		return makeParams("RunInstances")
+	}
+}
+
+func prepareBlockDevices(params map[string]string, blockDevs []BlockDeviceMapping) {
+	for i, b := range blockDevs {
+		n := strconv.Itoa(i + 1)
+		prefix := "BlockDeviceMapping." + n
+		if b.DeviceName != "" {
+			params[prefix+".DeviceName"] = b.DeviceName
+		}
+		if b.VirtualName != "" {
+			params[prefix+".VirtualName"] = b.VirtualName
+		}
+		if b.SnapshotId != "" {
+			params[prefix+".Ebs.SnapshotId"] = b.SnapshotId
+		}
+		if b.VolumeType != "" {
+			params[prefix+".Ebs.VolumeType"] = b.VolumeType
+		}
+		if b.VolumeSize > 0 {
+			params[prefix+".Ebs.VolumeSize"] = strconv.FormatInt(b.VolumeSize, 10)
+		}
+		if b.IOPS > 0 {
+			params[prefix+".Ebs.Iops"] = strconv.FormatInt(b.IOPS, 10)
+		}
+		if b.DeleteOnTermination {
+			params[prefix+".Ebs.DeleteOnTermination"] = "true"
+		}
+	}
+}
+
+func prepareNetworkInterfaces(params map[string]string, nics []RunNetworkInterface) {
+	for i, ni := range nics {
+		// Unlike other lists, NetworkInterface and PrivateIpAddresses
+		// should start from 0, not 1, according to the examples
+		// requests in the API documentation here http://goo.gl/Mcm3b.
+		n := strconv.Itoa(i)
+		prefix := "NetworkInterface." + n
+		if ni.Id != "" {
+			params[prefix+".NetworkInterfaceId"] = ni.Id
+		}
+		params[prefix+".DeviceIndex"] = strconv.Itoa(ni.DeviceIndex)
+		if ni.SubnetId != "" {
+			params[prefix+".SubnetId"] = ni.SubnetId
+		}
+		if ni.Description != "" {
+			params[prefix+".Description"] = ni.Description
+		}
+		for j, gid := range ni.SecurityGroupIds {
+			k := strconv.Itoa(j + 1)
+			params[prefix+".SecurityGroupId."+k] = gid
+		}
+		if ni.DeleteOnTermination {
+			params[prefix+".DeleteOnTermination"] = "true"
+		}
+		if ni.SecondaryPrivateIPCount > 0 {
+			val := strconv.Itoa(ni.SecondaryPrivateIPCount)
+			params[prefix+".SecondaryPrivateIpAddressCount"] = val
+		}
+		for j, ip := range ni.PrivateIPs {
+			k := strconv.Itoa(j)
+			subprefix := prefix + ".PrivateIpAddresses." + k
+			params[subprefix+".PrivateIpAddress"] = ip.Address
+			params[subprefix+".Primary"] = strconv.FormatBool(ip.IsPrimary)
+		}
+	}
 }
 
 func clientToken() (string, error) {
