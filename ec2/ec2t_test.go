@@ -5,6 +5,7 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"time"
 
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
@@ -111,7 +112,7 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
-// It will only be activated if the -all flag is specified.
+// It will only be activated if the -amazon flag is specified.
 type AmazonServerSuite struct {
 	srv AmazonServer
 	ServerTests
@@ -149,7 +150,7 @@ func terminateInstances(c *C, e *ec2.EC2, insts []*ec2.Instance) {
 func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup {
 	// Clean it up if a previous test left it around.
 	_, err := s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
-	if err != nil && err.(*ec2.Error).Code != "InvalidGroup.NotFound" {
+	if err != nil && errorCode(err) != "InvalidGroup.NotFound" {
 		c.Fatalf("delete security group: %v", err)
 	}
 
@@ -161,10 +162,8 @@ func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup 
 
 func (s *ServerTests) TestIPPerms(c *C) {
 	g0 := s.makeTestGroup(c, "goamz-test0", "ec2test group 0")
-	defer s.ec2.DeleteSecurityGroup(g0)
-
 	g1 := s.makeTestGroup(c, "goamz-test1", "ec2test group 1")
-	defer s.ec2.DeleteSecurityGroup(g1)
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
 
 	resp, err := s.ec2.SecurityGroups([]ec2.SecurityGroup{g0, g1}, nil)
 	c.Assert(err, IsNil)
@@ -183,7 +182,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		SourceIPs: []string{"z127.0.0.1/24"},
 	}})
 	c.Assert(err, NotNil)
-	c.Check(err.(*ec2.Error).Code, Equals, "InvalidPermission.Malformed")
+	c.Check(errorCode(err), Equals, "InvalidPermission.Malformed")
 
 	// Check that AuthorizeSecurityGroup adds the correct authorizations.
 	_, err = s.ec2.AuthorizeSecurityGroup(g0, []ec2.IPPerm{{
@@ -230,7 +229,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 	// Check that we can't delete g1 (because g0 is using it)
 	_, err = s.ec2.DeleteSecurityGroup(g1)
 	c.Assert(err, NotNil)
-	c.Check(err.(*ec2.Error).Code, Equals, "InvalidGroup.InUse")
+	c.Check(errorCode(err), Equals, "InvalidGroup.InUse")
 
 	_, err = s.ec2.RevokeSecurityGroup(g0, []ec2.IPPerm{{
 		Protocol:     "tcp",
@@ -301,7 +300,7 @@ func (s *ServerTests) TestDuplicateIPPerm(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: name}, perms[0:2])
-	c.Assert(err, ErrorMatches, `.*\(InvalidPermission.Duplicate\)`)
+	c.Assert(errorCode(err), Equals, "InvalidPermission.Duplicate")
 }
 
 type filterSpec struct {
@@ -313,12 +312,12 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 	groupResp, err := s.ec2.CreateSecurityGroup(sessionName("testgroup1"), "testgroup one description")
 	c.Assert(err, IsNil)
 	group1 := groupResp.SecurityGroup
-	defer s.ec2.DeleteSecurityGroup(group1)
 
 	groupResp, err = s.ec2.CreateSecurityGroup(sessionName("testgroup2"), "testgroup two description")
 	c.Assert(err, IsNil)
 	group2 := groupResp.SecurityGroup
-	defer s.ec2.DeleteSecurityGroup(group2)
+
+	defer s.deleteGroups(c, []ec2.SecurityGroup{group1, group2})
 
 	insts := make([]*ec2.Instance, 3)
 	inst, err := s.ec2.RunInstances(&ec2.RunInstances{
@@ -484,8 +483,8 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		c.Assert(err, IsNil)
 		g[i] = resp.SecurityGroup
 		c.Logf("group %d: %v", i, g[i])
-		defer s.ec2.DeleteSecurityGroup(g[i])
 	}
+	defer s.deleteGroups(c, g)
 
 	perms := [][]ec2.IPPerm{
 		{{
@@ -620,4 +619,44 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			c.Check(rg.Name, Equals, g.Name, Commentf("group %d (%v)", j, g))
 		}
 	}
+}
+
+// deleteGroups ensures the given groups are deleted, by retrying
+// until a timeout or all groups cannot be found anymore.
+// This should be used to make sure tests leave no groups around.
+func (s *ServerTests) deleteGroups(c *C, groups []ec2.SecurityGroup) {
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		deleted := 0
+		c.Logf("deleting groups %v", groups)
+		for _, group := range groups {
+			_, err := s.ec2.DeleteSecurityGroup(group)
+			if err == nil || errorCode(err) == "InvalidGroup.NotFound" {
+				c.Logf("group %v deleted", group)
+				deleted++
+				continue
+			}
+			if err != nil {
+				c.Logf("retrying; DeleteSecurityGroup returned: %v", err)
+			}
+		}
+		if deleted == len(groups) {
+			c.Logf("all groups deleted")
+			return
+		}
+	}
+	c.Fatalf("timeout while waiting %v groups to get deleted!", groups)
+}
+
+// errorCode returns the code of the given error, assuming it's not
+// nil and it's an instance of *ec2.Error. It returns an empty string
+// otherwise.
+func errorCode(err error) string {
+	if err, _ := err.(*ec2.Error); err != nil {
+		return err.Code
+	}
+	return ""
 }

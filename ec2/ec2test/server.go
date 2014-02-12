@@ -50,10 +50,13 @@ type Server struct {
 	instances            map[string]*Instance      // id -> instance
 	reservations         map[string]*reservation   // id -> reservation
 	groups               map[string]*securityGroup // id -> group
+	vpcs                 map[string]*vpc           // id -> vpc
 	maxId                counter
 	reqId                counter
 	reservationId        counter
 	groupId              counter
+	vpcId                counter
+	dhcpOptsId           counter
 	initialInstanceState ec2.InstanceState
 }
 
@@ -191,6 +194,24 @@ func (g *securityGroup) ec2Perms() (perms []ec2.IPPerm) {
 	return
 }
 
+type vpc struct {
+	ec2.VPC
+}
+
+func (v *vpc) matchAttr(attr, value string) (ok bool, err error) {
+	switch attr {
+	case "cidr":
+		return v.CIDRBlock == value, nil
+	case "state":
+		return v.State == value, nil
+	case "vpc-id":
+		return v.Id == value, nil
+	case "tag", "tag-key", "tag-value", "dhcp-options-id", "isDefault":
+		return false, fmt.Errorf("%q filter is not implemented", attr)
+	}
+	return false, fmt.Errorf("unknown attribute %q", attr)
+}
+
 var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, string) interface{}{
 	"RunInstances":                  (*Server).runInstances,
 	"TerminateInstances":            (*Server).terminateInstances,
@@ -200,6 +221,9 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"DeleteSecurityGroup":           (*Server).deleteSecurityGroup,
 	"AuthorizeSecurityGroupIngress": (*Server).authorizeSecurityGroupIngress,
 	"RevokeSecurityGroupIngress":    (*Server).revokeSecurityGroupIngress,
+	"CreateVpc":                     (*Server).createVpc,
+	"DeleteVpc":                     (*Server).deleteVpc,
+	"DescribeVpcs":                  (*Server).describeVpcs,
 }
 
 const ownerId = "9876"
@@ -220,6 +244,7 @@ func NewServer() (*Server, error) {
 	srv := &Server{
 		instances:            make(map[string]*Instance),
 		groups:               make(map[string]*securityGroup),
+		vpcs:                 make(map[string]*vpc),
 		reservations:         make(map[string]*reservation),
 		initialInstanceState: Pending,
 	}
@@ -798,9 +823,11 @@ func (srv *Server) revokeSecurityGroupIngress(w http.ResponseWriter, req *http.R
 	}
 }
 
-var secGroupPat = regexp.MustCompile(`^sg-[a-z0-9]+$`)
-var ipPat = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$`)
-var ownerIdPat = regexp.MustCompile(`^[0-9]+$`)
+var (
+	secGroupPat = regexp.MustCompile(`^sg-[a-z0-9]+$`)
+	cidrIpPat   = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([0-9]+)$`)
+	ownerIdPat  = regexp.MustCompile(`^[0-9]+$`)
+)
 
 // parsePerms returns a slice of permKey values extracted
 // from the permission fields in req.
@@ -884,7 +911,7 @@ func (srv *Server) parsePerms(req *http.Request) []permKey {
 			}
 			switch rest {
 			case "CidrIp":
-				if !ipPat.MatchString(val) {
+				if !cidrIpPat.MatchString(val) {
 					fatalf(400, "InvalidPermission.Malformed", "Invalid IP range: %q", val)
 				}
 				ec2p.SourceIPs = append(ec2p.SourceIPs, val)
@@ -978,6 +1005,61 @@ func (srv *Server) deleteSecurityGroup(w http.ResponseWriter, req *http.Request,
 	}
 }
 
+func (srv *Server) createVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	cidrBlock := parseCidr(req.Form.Get("CidrBlock"))
+	tenancy := req.Form.Get("InstanceTenancy")
+	if tenancy == "" {
+		tenancy = "default"
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	v := &vpc{ec2.VPC{
+		Id:              fmt.Sprintf("vpc-%d", srv.vpcId.next()),
+		State:           "available",
+		CIDRBlock:       cidrBlock,
+		DHCPOptionsId:   fmt.Sprintf("dopt-%d", srv.dhcpOptsId.next()),
+		InstanceTenancy: tenancy,
+	}}
+	srv.vpcs[v.Id] = v
+	r := &ec2.CreateVPCResp{
+		RequestId: reqId,
+		VPC:       v.VPC,
+	}
+	return r
+}
+
+func (srv *Server) deleteVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	v := srv.vpc(req.Form.Get("VpcId"))
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	delete(srv.vpcs, v.Id)
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{"", "DeleteVpcResponse"},
+		RequestId: reqId,
+	}
+}
+
+func (srv *Server) describeVpcs(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	idMap := collectIds(req.Form, "VpcId.")
+	f := newFilter(req.Form)
+	var resp ec2.VPCsResp
+	resp.RequestId = reqId
+	for _, v := range srv.vpcs {
+		ok, err := f.ok(v)
+		if ok && (len(idMap) == 0 || idMap[v.Id]) {
+			resp.VPCs = append(resp.VPCs, v.VPC)
+		} else if err != nil {
+			fatalf(400, "InvalidParameterValue", "describe VPCs: %v", err)
+		}
+	}
+	return &resp
+}
+
 func (r *reservation) hasRunningMachine() bool {
 	for _, inst := range r.instances {
 		if inst.state.Code != ShuttingDown.Code && inst.state.Code != Terminated.Code {
@@ -985,6 +1067,41 @@ func (r *reservation) hasRunningMachine() bool {
 		}
 	}
 	return false
+}
+
+func parseCidr(val string) string {
+	if val == "" {
+		fatalf(400, "MissingParameter", "missing cidrBlock")
+	}
+	if _, _, err := net.ParseCIDR(val); err != nil {
+		fatalf(400, "InvalidParameterValue", "bad CIDR %q: %v", val, err)
+	}
+	return val
+}
+
+func (srv *Server) vpc(id string) *vpc {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing vpcId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	v, found := srv.vpcs[id]
+	if !found {
+		fatalf(400, "InvalidVpcID.NotFound", "VPC %s not found", id)
+	}
+	return v
+}
+
+// collectIds takes all values with the given prefix from form and
+// returns a map with the ids as keys.
+func collectIds(form url.Values, prefix string) map[string]bool {
+	idMap := make(map[string]bool)
+	for name, vals := range form {
+		if strings.HasPrefix(name, prefix) {
+			idMap[vals[0]] = true
+		}
+	}
+	return idMap
 }
 
 type counter int

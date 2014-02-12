@@ -5,8 +5,6 @@
 //
 // Copyright (c) 2011 Canonical Ltd.
 //
-// Written by Gustavo Niemeyer <gustavo.niemeyer@canonical.com>
-//
 
 package ec2
 
@@ -25,7 +23,16 @@ import (
 	"time"
 )
 
-const debug = false
+const (
+	debug = false
+
+	// legacyAPIVersion is the AWS API version used for all but
+	// VPC-related requests.
+	legacyAPIVersion = "2011-12-15"
+
+	// AWS API version used for VPC-related calls.
+	vpcAPIVersion = "2013-10-15"
+)
 
 // The EC2 type encapsulates operations with a specific EC2 region.
 type EC2 struct {
@@ -119,7 +126,6 @@ type xmlErrors struct {
 var timeNow = time.Now
 
 func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
-	params["Version"] = "2011-12-15"
 	params["Timestamp"] = timeNow().In(time.UTC).Format(time.RFC3339)
 	endpoint, err := url.Parse(ec2.Region.EC2Endpoint)
 	if err != nil {
@@ -175,8 +181,17 @@ func buildError(r *http.Response) error {
 }
 
 func makeParams(action string) map[string]string {
+	return makeParamsWithVersion(action, legacyAPIVersion)
+}
+
+func makeParamsVPC(action string) map[string]string {
+	return makeParamsWithVersion(action, vpcAPIVersion)
+}
+
+func makeParamsWithVersion(action, version string) map[string]string {
 	params := make(map[string]string)
 	params["Action"] = action
+	params["Version"] = version
 	return params
 }
 
@@ -803,7 +818,7 @@ func (ec2 *EC2) authOrRevoke(op string, group SecurityGroup, perms []IPPerm) (re
 	return resp, nil
 }
 
-// ResourceTag represents key-value metadata used to classify and organize
+// Tag represents key-value metadata used to classify and organize
 // EC2 instances.
 //
 // See http://goo.gl/bncl3 for more details
