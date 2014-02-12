@@ -51,12 +51,14 @@ type Server struct {
 	reservations         map[string]*reservation   // id -> reservation
 	groups               map[string]*securityGroup // id -> group
 	vpcs                 map[string]*vpc           // id -> vpc
+	subnets              map[string]*subnet        // id -> subnet
 	maxId                counter
 	reqId                counter
 	reservationId        counter
 	groupId              counter
 	vpcId                counter
 	dhcpOptsId           counter
+	subnetId             counter
 	initialInstanceState ec2.InstanceState
 }
 
@@ -212,6 +214,28 @@ func (v *vpc) matchAttr(attr, value string) (ok bool, err error) {
 	return false, fmt.Errorf("unknown attribute %q", attr)
 }
 
+type subnet struct {
+	ec2.Subnet
+}
+
+func (s *subnet) matchAttr(attr, value string) (ok bool, err error) {
+	switch attr {
+	case "cidr":
+		return s.CIDRBlock == value, nil
+	case "availability-zone":
+		return s.AvailZone == value, nil
+	case "state":
+		return s.State == value, nil
+	case "subnet-id":
+		return s.Id == value, nil
+	case "vpc-id":
+		return s.VPCId == value, nil
+	case "tag", "tag-key", "tag-value", "available-ip-address-count", "defaultForAz":
+		return false, fmt.Errorf("%q filter not implemented", attr)
+	}
+	return false, fmt.Errorf("unknown attribute %q", attr)
+}
+
 var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, string) interface{}{
 	"RunInstances":                  (*Server).runInstances,
 	"TerminateInstances":            (*Server).terminateInstances,
@@ -224,6 +248,9 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"CreateVpc":                     (*Server).createVpc,
 	"DeleteVpc":                     (*Server).deleteVpc,
 	"DescribeVpcs":                  (*Server).describeVpcs,
+	"CreateSubnet":                  (*Server).createSubnet,
+	"DeleteSubnet":                  (*Server).deleteSubnet,
+	"DescribeSubnets":               (*Server).describeSubnets,
 }
 
 const ownerId = "9876"
@@ -245,6 +272,7 @@ func NewServer() (*Server, error) {
 		instances:            make(map[string]*Instance),
 		groups:               make(map[string]*securityGroup),
 		vpcs:                 make(map[string]*vpc),
+		subnets:              make(map[string]*subnet),
 		reservations:         make(map[string]*reservation),
 		initialInstanceState: Pending,
 	}
@@ -1060,6 +1088,70 @@ func (srv *Server) describeVpcs(w http.ResponseWriter, req *http.Request, reqId 
 	return &resp
 }
 
+func (srv *Server) createSubnet(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	v := srv.vpc(req.Form.Get("VpcId"))
+	cidrBlock := parseCidr(req.Form.Get("CidrBlock"))
+	availZone := req.Form.Get("AvailabilityZone")
+	if availZone == "" {
+		// Assign one automatically as AWS does.
+		availZone = "us-east-1b"
+	}
+	// calculate the available IP addresses, removing the first 4 and
+	// the last, which are reserved by AWS. Since we already checked
+	// the CIDR is valid, we don't check the error here.
+	_, ipnet, _ := net.ParseCIDR(cidrBlock)
+	maskOnes, maskBits := ipnet.Mask.Size()
+	availIPs := 1<<uint(maskBits-maskOnes) - 5
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	s := &subnet{ec2.Subnet{
+		Id:               fmt.Sprintf("subnet-%d", srv.subnetId.next()),
+		VPCId:            v.Id,
+		State:            "available",
+		CIDRBlock:        cidrBlock,
+		AvailZone:        availZone,
+		AvailableIPCount: availIPs,
+	}}
+	srv.subnets[s.Id] = s
+	r := &ec2.CreateSubnetResp{
+		RequestId: reqId,
+		Subnet:    s.Subnet,
+	}
+	return r
+}
+
+func (srv *Server) deleteSubnet(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	s := srv.subnet(req.Form.Get("SubnetId"))
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	delete(srv.subnets, s.Id)
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{"", "DeleteSubnetResponse"},
+		RequestId: reqId,
+	}
+}
+
+func (srv *Server) describeSubnets(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	idMap := collectIds(req.Form, "SubnetId.")
+	f := newFilter(req.Form)
+	var resp ec2.SubnetsResp
+	resp.RequestId = reqId
+	for _, s := range srv.subnets {
+		ok, err := f.ok(s)
+		if ok && (len(idMap) == 0 || idMap[s.Id]) {
+			resp.Subnets = append(resp.Subnets, s.Subnet)
+		} else if err != nil {
+			fatalf(400, "InvalidParameterValue", "describe subnets: %v", err)
+		}
+	}
+	return &resp
+}
+
 func (r *reservation) hasRunningMachine() bool {
 	for _, inst := range r.instances {
 		if inst.state.Code != ShuttingDown.Code && inst.state.Code != Terminated.Code {
@@ -1090,6 +1182,19 @@ func (srv *Server) vpc(id string) *vpc {
 		fatalf(400, "InvalidVpcID.NotFound", "VPC %s not found", id)
 	}
 	return v
+}
+
+func (srv *Server) subnet(id string) *subnet {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing subnetId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	s, found := srv.subnets[id]
+	if !found {
+		fatalf(400, "InvalidSubnetID.NotFound", "subnet %s not found", id)
+	}
+	return s
 }
 
 // collectIds takes all values with the given prefix from form and

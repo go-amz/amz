@@ -147,6 +147,36 @@ func (s *ServerTests) TestVPCs(c *C) {
 	c.Assert(err, IsNil)
 }
 
+// deleteVPCs ensures the given VPCs are deleted, by retrying until a
+// timeout or all VPC cannot be found anymore.  This should be used to
+// make sure tests leave no VPCs around.
+func (s *ServerTests) deleteVPCs(c *C, ids []string) {
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		deleted := 0
+		c.Logf("deleting VPCs %v", ids)
+		for _, id := range ids {
+			_, err := s.ec2.DeleteVPC(id)
+			if err == nil || errorCode(err) == "InvalidVpcID.NotFound" {
+				c.Logf("VPC %s deleted", id)
+				deleted++
+				continue
+			}
+			if err != nil {
+				c.Logf("retrying; DeleteVPC returned: %v", err)
+			}
+		}
+		if deleted == len(ids) {
+			c.Logf("all VPCs deleted")
+			return
+		}
+	}
+	c.Fatalf("timeout while waiting %v VPCs to get deleted!", ids)
+}
+
 func assertVPC(c *C, obtained ec2.VPC, expectId, expectCidr string) {
 	if expectId != "" {
 		c.Check(obtained.Id, Equals, expectId)
