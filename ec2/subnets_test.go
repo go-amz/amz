@@ -89,7 +89,7 @@ func (s *S) TestSubnetsExample(c *C) {
 	c.Check(subnet.Tags, HasLen, 0)
 }
 
-// Subnet tests to run against either a local test server or live on EC2.
+// Subnet tests run against either a local test server or live on EC2.
 
 func (s *ServerTests) TestSubnets(c *C) {
 	resp, err := s.ec2.CreateVPC("10.2.0.0/16", "")
