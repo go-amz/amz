@@ -807,11 +807,11 @@ func (s *S) TestSignatureWithEndpointPath(c *C) {
 	c.Assert(req.Form["Signature"], DeepEquals, []string{"gdG/vEm+c6ehhhfkrJy3+wuVzw/rzKR42TYelMwti7M="})
 }
 
-func (s *S) TestAccountAttributeExamples(c *C) {
+func (s *S) TestDescribeAccountAttributesExamples(c *C) {
 	testServer.Response(200, nil, DescribeAccountAttributesExample)
 
 	attrName := ec2.SupportedPlatforms
-	resp, err := s.ec2.AccountAttribute(attrName)
+	resp, err := s.ec2.AccountAttributes(attrName)
 	req := testServer.WaitRequest()
 
 	assertAttribute := func(name, value string) {
@@ -820,7 +820,8 @@ func (s *S) TestAccountAttributeExamples(c *C) {
 
 		c.Assert(err, IsNil)
 		c.Assert(resp.RequestId, Equals, "7a62c49f-347e-4fc4-9331-6e8eEXAMPLE")
-		attr := resp.Attribute
+		c.Assert(resp.Attributes, HasLen, 1)
+		attr := resp.Attributes[0]
 		c.Check(attr.Name, Equals, name)
 		c.Check(attr.Values, DeepEquals, []string{value})
 	}
@@ -828,13 +829,13 @@ func (s *S) TestAccountAttributeExamples(c *C) {
 
 	testServer.Response(200, nil, DescribeAccountAttributesExample2)
 	attrName = ec2.DefaultVPC
-	resp, err = s.ec2.AccountAttribute(attrName)
+	resp, err = s.ec2.AccountAttributes(attrName)
 	req = testServer.WaitRequest()
 	assertAttribute(attrName, "vpc-xxxxxxxx")
 
 	testServer.Response(200, nil, DescribeAccountAttributesExample3)
 	attrName = ec2.DefaultVPC
-	resp, err = s.ec2.AccountAttribute(attrName)
+	resp, err = s.ec2.AccountAttributes(attrName)
 	req = testServer.WaitRequest()
 	assertAttribute(attrName, "none")
 }
