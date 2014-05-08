@@ -921,3 +921,54 @@ var UnassignPrivateIpAddressesExample = `
    <return>true</return>
 </UnassignPrivateIpAddresses>
 `
+
+// http://goo.gl/hBc28j
+var DescribeAccountAttributesExample = `
+<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-02-01/">
+  <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
+  <accountAttributeSet>
+    <item>
+      <attributeName>supported-platforms</attributeName>
+      <attributeValueSet>
+        <item>
+          <attributeValue>VPC</attributeValue>
+        </item>
+      </attributeValueSet>
+    </item>
+  </accountAttributeSet>
+</DescribeAccountAttributesResponse>
+`
+
+// http://goo.gl/hBc28j
+var DescribeAccountAttributesExample2 = `
+<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-02-01/">
+  <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
+  <accountAttributeSet>
+    <item>
+      <attributeName>default-vpc</attributeName>
+      <attributeValueSet>
+        <item>
+          <attributeValue>vpc-xxxxxxxx</attributeValue>
+        </item>
+      </attributeValueSet>
+    </item>
+  </accountAttributeSet>
+</DescribeAccountAttributesResponse>
+`
+
+// http://goo.gl/hBc28j
+var DescribeAccountAttributesExample3 = `
+<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-02-01/">
+  <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
+  <accountAttributeSet>
+    <item>
+      <attributeName>default-vpc</attributeName>
+      <attributeValueSet>
+        <item>
+          <attributeValue>none</attributeValue>
+        </item>
+      </attributeValueSet>
+    </item>
+  </accountAttributeSet>
+</DescribeAccountAttributesResponse>
+`

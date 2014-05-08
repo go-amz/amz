@@ -13,7 +13,6 @@ import (
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
-	"launchpad.net/goamz/aws"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -21,6 +20,8 @@ import (
 	"sort"
 	"strconv"
 	"time"
+
+	"launchpad.net/goamz/aws"
 )
 
 const (
@@ -1004,6 +1005,46 @@ func (ec2 *EC2) RebootInstances(ids ...string) (resp *SimpleResp, err error) {
 	params := makeParams("RebootInstances")
 	addParamsList(params, "InstanceId", ids)
 	resp = &SimpleResp{}
+	err = ec2.query(params, resp)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// All supported AccountAttribute options.
+//
+// See http://goo.gl/hBc28j for more details.
+const (
+	SupportedPlatforms = "supported-platforms"
+	DefaultVPC         = "default-vpc"
+)
+
+// Attribute describes an Amazon account attribute.
+//
+// See http://goo.gl/hBc28j for more details.
+type Attribute struct {
+	Name   string   `xml:"attributeName"`
+	Values []string `xml:"attributeValueSet>item>attributeValue"`
+}
+
+// AccountAttributeResp is the response to an AccountAttribute request.
+//
+// See http://goo.gl/hBc28j for more details.
+type AccountAttributeResp struct {
+	RequestId string    `xml:"requestId"`
+	Attribute Attribute `xml:"accountAttributeSet>item"`
+}
+
+// AccountAttribute returns the values of an Amazon account attribute
+// The only supported values are SupportedPlatforms and DefaultVPC.
+//
+// See http://goo.gl/hBc28j for more details.
+func (ec2 *EC2) AccountAttribute(attrName string) (resp *AccountAttributeResp, err error) {
+	params := makeParamsVPC("DescribeAccountAttributes")
+	params["AttributeName.1"] = attrName
+
+	resp = &AccountAttributeResp{}
 	err = ec2.query(params, resp)
 	if err != nil {
 		return nil, err
