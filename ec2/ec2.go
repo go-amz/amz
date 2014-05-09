@@ -1012,18 +1012,10 @@ func (ec2 *EC2) RebootInstances(ids ...string) (resp *SimpleResp, err error) {
 	return resp, nil
 }
 
-// All supported AccountAttributes options.
+// AccountAttribute holds information about an account attribute.
 //
 // See http://goo.gl/hBc28j for more details.
-const (
-	SupportedPlatforms = "supported-platforms"
-	DefaultVPC         = "default-vpc"
-)
-
-// Attribute describes an Amazon account attribute.
-//
-// See http://goo.gl/hBc28j for more details.
-type Attribute struct {
+type AccountAttribute struct {
 	Name   string   `xml:"attributeName"`
 	Values []string `xml:"attributeValueSet>item>attributeValue"`
 }
@@ -1032,24 +1024,22 @@ type Attribute struct {
 //
 // See http://goo.gl/hBc28j for more details.
 type AccountAttributesResp struct {
-	RequestId  string      `xml:"requestId"`
-	Attributes []Attribute `xml:"accountAttributeSet>item"`
+	RequestId  string             `xml:"requestId"`
+	Attributes []AccountAttribute `xml:"accountAttributeSet>item"`
 }
 
-// AccountAttributes returns the values of one or more Amazon account
-// attributes. The only supported values are SupportedPlatforms and
-// DefaultVPC.
+// AccountAttributes returns the values of one or more account
+// attributes.
 //
 // See http://goo.gl/hBc28j for more details.
-func (ec2 *EC2) AccountAttributes(attrNames ...string) (resp *AccountAttributesResp, err error) {
+func (ec2 *EC2) AccountAttributes(attrNames ...string) (*AccountAttributesResp, error) {
 	params := makeParamsVPC("DescribeAccountAttributes")
 	for i, attrName := range attrNames {
 		params["AttributeName."+strconv.Itoa(i+1)] = attrName
 	}
 
-	resp = &AccountAttributesResp{}
-	err = ec2.query(params, resp)
-	if err != nil {
+	resp := &AccountAttributesResp{}
+	if err := ec2.query(params, resp); err != nil {
 		return nil, err
 	}
 	return resp, nil

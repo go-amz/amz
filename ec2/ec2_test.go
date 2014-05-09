@@ -810,8 +810,7 @@ func (s *S) TestSignatureWithEndpointPath(c *C) {
 func (s *S) TestDescribeAccountAttributesExamples(c *C) {
 	testServer.Response(200, nil, DescribeAccountAttributesExample)
 
-	attrName := ec2.SupportedPlatforms
-	resp, err := s.ec2.AccountAttributes(attrName)
+	resp, err := s.ec2.AccountAttributes("supported-platforms")
 	req := testServer.WaitRequest()
 
 	assertAttribute := func(name, value string) {
@@ -825,17 +824,15 @@ func (s *S) TestDescribeAccountAttributesExamples(c *C) {
 		c.Check(attr.Name, Equals, name)
 		c.Check(attr.Values, DeepEquals, []string{value})
 	}
-	assertAttribute(attrName, "VPC")
+	assertAttribute("supported-platforms", "VPC")
 
 	testServer.Response(200, nil, DescribeAccountAttributesExample2)
-	attrName = ec2.DefaultVPC
-	resp, err = s.ec2.AccountAttributes(attrName)
+	resp, err = s.ec2.AccountAttributes("default-vpc")
 	req = testServer.WaitRequest()
-	assertAttribute(attrName, "vpc-xxxxxxxx")
+	assertAttribute("default-vpc", "vpc-xxxxxxxx")
 
 	testServer.Response(200, nil, DescribeAccountAttributesExample3)
-	attrName = ec2.DefaultVPC
-	resp, err = s.ec2.AccountAttributes(attrName)
+	resp, err = s.ec2.AccountAttributes("default-vpc")
 	req = testServer.WaitRequest()
-	assertAttribute(attrName, "none")
+	assertAttribute("default-vpc", "none")
 }

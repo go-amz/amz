@@ -1423,7 +1423,7 @@ func (srv *Server) accountAttributes(w http.ResponseWriter, req *http.Request, r
 		if !ok {
 			fatalf(400, "InvalidParameterValue", "describe attrs: not found %q", attrName)
 		}
-		resp.Attributes = append(resp.Attributes, ec2.Attribute{attrName, vals})
+		resp.Attributes = append(resp.Attributes, ec2.AccountAttribute{attrName, vals})
 	}
 	return &resp
 }

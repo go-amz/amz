@@ -28,8 +28,8 @@ func (s *LocalServer) SetUp(c *C) {
 
 	// Add default attributes.
 	srv.SetInitialAttributes(map[string][]string{
-		ec2.SupportedPlatforms: []string{"VPC", "EC2"},
-		ec2.DefaultVPC:         []string{"vpc-xxxxxxx"},
+		"supported-platforms": []string{"VPC", "EC2"},
+		"default-vpc":         []string{"vpc-xxxxxxx"},
 	})
 
 	s.srv = srv
@@ -143,15 +143,15 @@ type ServerTests struct {
 }
 
 func (s *ServerTests) TestDescribeAccountAttributes(c *C) {
-	resp, err := s.ec2.AccountAttributes(ec2.SupportedPlatforms, ec2.DefaultVPC)
+	resp, err := s.ec2.AccountAttributes("supported-platforms", "default-vpc")
 	c.Assert(err, IsNil)
 	c.Assert(resp.Attributes, HasLen, 2)
 	for _, attr := range resp.Attributes {
 		switch attr.Name {
-		case ec2.SupportedPlatforms:
+		case "supported-platforms":
 			sort.Strings(attr.Values)
 			c.Assert(attr.Values, DeepEquals, []string{"EC2", "VPC"})
-		case ec2.DefaultVPC:
+		case "default-vpc":
 			c.Assert(attr.Values, HasLen, 1)
 			c.Assert(attr.Values[0], Not(Equals), "")
 		default:
