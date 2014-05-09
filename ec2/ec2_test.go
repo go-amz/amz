@@ -1,11 +1,12 @@
 package ec2_test
 
 import (
+	"testing"
+
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/testutil"
 	. "launchpad.net/gocheck"
-	"testing"
 )
 
 func Test(t *testing.T) {
@@ -804,4 +805,34 @@ func (s *S) TestSignatureWithEndpointPath(c *C) {
 
 	req := testServer.WaitRequest()
 	c.Assert(req.Form["Signature"], DeepEquals, []string{"gdG/vEm+c6ehhhfkrJy3+wuVzw/rzKR42TYelMwti7M="})
+}
+
+func (s *S) TestDescribeAccountAttributesExamples(c *C) {
+	testServer.Response(200, nil, DescribeAccountAttributesExample)
+
+	resp, err := s.ec2.AccountAttributes("supported-platforms")
+	req := testServer.WaitRequest()
+
+	assertAttribute := func(name, value string) {
+		c.Assert(req.Form["Action"], DeepEquals, []string{"DescribeAccountAttributes"})
+		c.Assert(req.Form["AttributeName.1"], DeepEquals, []string{name})
+
+		c.Assert(err, IsNil)
+		c.Assert(resp.RequestId, Equals, "7a62c49f-347e-4fc4-9331-6e8eEXAMPLE")
+		c.Assert(resp.Attributes, HasLen, 1)
+		attr := resp.Attributes[0]
+		c.Check(attr.Name, Equals, name)
+		c.Check(attr.Values, DeepEquals, []string{value})
+	}
+	assertAttribute("supported-platforms", "VPC")
+
+	testServer.Response(200, nil, DescribeAccountAttributesExample2)
+	resp, err = s.ec2.AccountAttributes("default-vpc")
+	req = testServer.WaitRequest()
+	assertAttribute("default-vpc", "vpc-xxxxxxxx")
+
+	testServer.Response(200, nil, DescribeAccountAttributesExample3)
+	resp, err = s.ec2.AccountAttributes("default-vpc")
+	req = testServer.WaitRequest()
+	assertAttribute("default-vpc", "none")
 }

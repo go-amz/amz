@@ -9,7 +9,6 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"launchpad.net/goamz/ec2"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"launchpad.net/goamz/ec2"
 )
 
 var b64 = base64.StdEncoding
@@ -48,6 +49,7 @@ type Server struct {
 	mu       sync.Mutex
 	reqs     []*Action
 
+	attributes           map[string][]string       // attr name -> values
 	instances            map[string]*Instance      // id -> instance
 	reservations         map[string]*reservation   // id -> reservation
 	groups               map[string]*securityGroup // id -> group
@@ -301,6 +303,7 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"DescribeNetworkInterfaces":     (*Server).describeIFaces,
 	"AttachNetworkInterface":        (*Server).attachIFace,
 	"DetachNetworkInterface":        (*Server).detachIFace,
+	"DescribeAccountAttributes":     (*Server).accountAttributes,
 }
 
 const ownerId = "9876"
@@ -319,6 +322,7 @@ func (srv *Server) newAction() *Action {
 // NewServer returns a new server.
 func NewServer() (*Server, error) {
 	srv := &Server{
+		attributes:           make(map[string][]string),
 		instances:            make(map[string]*Instance),
 		groups:               make(map[string]*securityGroup),
 		vpcs:                 make(map[string]*vpc),
@@ -383,6 +387,13 @@ func (srv *Server) SetInitialInstanceState(state ec2.InstanceState) {
 	srv.mu.Lock()
 	srv.initialInstanceState = state
 	srv.mu.Unlock()
+}
+
+// SetInitialAttributes sets the given account attributes on the server.
+func (srv *Server) SetInitialAttributes(attrs map[string][]string) {
+	for attrName, values := range attrs {
+		srv.attributes[attrName] = values
+	}
 }
 
 // URL returns the URL of the server.
@@ -1398,6 +1409,23 @@ func (srv *Server) detachIFace(w http.ResponseWriter, req *http.Request, reqId s
 		XMLName:   xml.Name{"", "DetachNetworkInterface"},
 		RequestId: reqId,
 	}
+}
+
+func (srv *Server) accountAttributes(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	attrsMap := collectIds(req.Form, "AttributeName.")
+	var resp ec2.AccountAttributesResp
+	resp.RequestId = reqId
+	for attrName, _ := range attrsMap {
+		vals, ok := srv.attributes[attrName]
+		if !ok {
+			fatalf(400, "InvalidParameterValue", "describe attrs: not found %q", attrName)
+		}
+		resp.Attributes = append(resp.Attributes, ec2.AccountAttribute{attrName, vals})
+	}
+	return &resp
 }
 
 func (r *reservation) hasRunningMachine() bool {

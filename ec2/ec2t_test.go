@@ -26,6 +26,12 @@ func (s *LocalServer) SetUp(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(srv, NotNil)
 
+	// Add default attributes.
+	srv.SetInitialAttributes(map[string][]string{
+		"supported-platforms": []string{"VPC", "EC2"},
+		"default-vpc":         []string{"vpc-xxxxxxx"},
+	})
+
 	s.srv = srv
 	s.region = aws.Region{EC2Endpoint: srv.URL()}
 }
@@ -134,6 +140,24 @@ func (s *AmazonServerSuite) SetUpSuite(c *C) {
 // another type.
 type ServerTests struct {
 	ec2 *ec2.EC2
+}
+
+func (s *ServerTests) TestDescribeAccountAttributes(c *C) {
+	resp, err := s.ec2.AccountAttributes("supported-platforms", "default-vpc")
+	c.Assert(err, IsNil)
+	c.Assert(resp.Attributes, HasLen, 2)
+	for _, attr := range resp.Attributes {
+		switch attr.Name {
+		case "supported-platforms":
+			sort.Strings(attr.Values)
+			c.Assert(attr.Values, DeepEquals, []string{"EC2", "VPC"})
+		case "default-vpc":
+			c.Assert(attr.Values, HasLen, 1)
+			c.Assert(attr.Values[0], Not(Equals), "")
+		default:
+			c.Fatalf("unexpected account attribute %q: %v", attr.Name, attr)
+		}
+	}
 }
 
 func terminateInstances(c *C, e *ec2.EC2, ids []string) {
