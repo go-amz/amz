@@ -166,7 +166,7 @@ func (s *AmazonServerSuite) SetUpSuite(c *C) {
 		c.Skip("AmazonServerSuite tests not enabled")
 	}
 	s.srv.SetUp(c)
-	s.ServerTests.ec2 = ec2.New(s.srv.auth, aws.USWest)
+	s.ServerTests.ec2 = ec2.New(s.srv.auth, aws.USEast)
 }
 
 // ServerTests defines a set of tests designed to test
