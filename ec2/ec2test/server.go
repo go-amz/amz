@@ -400,9 +400,9 @@ func (srv *Server) SetInitialInstanceState(state ec2.InstanceState) {
 func (srv *Server) SetInitialAttributes(attrs map[string][]string) {
 	for attrName, values := range attrs {
 		srv.attributes[attrName] = values
-		// If default-vpc are being set, create them.
-		// Also create a subnet for each one.
 		if attrName == "default-vpc" {
+			// If default-vpc were provided, create them and their
+			// subnet.
 			for _, vpcId := range values {
 				srv.vpcs[vpcId] = &vpc{ec2.VPC{
 					Id:              vpcId,
@@ -548,8 +548,12 @@ func (srv *Server) formToGroups(form url.Values) []*securityGroup {
 }
 
 // parseRunNetworkInterfaces parses any RunNetworkInterface parameters
-// passed to RunInstances. If none are specified, it creates a single
-// network interface per instance, to simulate what EC2 does.
+// passed to RunInstances, and returns them, along with a
+// limitToOneInstance flag. The flag is set only when an existing
+// network interface id is specified, which according to the API
+// limits the number of instances to 1. If no network interfaces are
+// specified, it creates a default interface per instance, to simulate
+// what EC2 does.
 func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.RunNetworkInterface, limitToOneInstance bool) {
 	limitToOneInstance = false
 	for attr, vals := range req.Form {
@@ -557,6 +561,9 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.Ru
 			continue
 		}
 		fields := strings.Split(attr, ".")
+		if len(fields) < 3 || len(vals) != 1 {
+			fatalf(400, "InvalidParameterValue", "bad param %q: %v", attr, vals)
+		}
 		index := atoi(fields[1]) // NetworkInterface.<#>
 		for len(ifaces)-1 < index {
 			ifaces = append(ifaces, ec2.RunNetworkInterface{})
@@ -592,12 +599,14 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.Ru
 			}
 			iface.DeleteOnTermination = val
 		case "PrivateIpAddress":
-			iface.PrivateIPs = append(iface.PrivateIPs, ec2.PrivateIP{
-				Address: vals[0], IsPrimary: true,
-			})
+			privateIP := ec2.PrivateIP{Address: vals[0], IsPrimary: true}
+			iface.PrivateIPs = append(iface.PrivateIPs, privateIP)
 		case "SecondaryPrivateIpAddressCount":
 			iface.SecondaryPrivateIPCount = atoi(vals[0])
 		case "PrivateIpAddresses":
+			if len(fields) < 4 {
+				fatalf(400, "InvalidParameterValue", "bad param %q: %v", attr, vals)
+			}
 			ipIndex := atoi(fields[3])
 			for len(iface.PrivateIPs)-1 < ipIndex {
 				iface.PrivateIPs = append(iface.PrivateIPs, ec2.PrivateIP{})
@@ -631,14 +640,14 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.Ru
 	}
 	if len(ifaces) == 0 {
 		// None given, so create one to simulate what EC2 does.
-		defaultVPCId := "none"
+		defaultVPCId := ""
 		for _, vpc := range srv.vpcs {
 			if vpc.IsDefault {
 				defaultVPCId = vpc.Id
 				break
 			}
 		}
-		if defaultVPCId == "none" {
+		if defaultVPCId == "" {
 			// No default VPC, so nothing to do.
 			return ifaces, limitToOneInstance
 		}
@@ -653,12 +662,18 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.Ru
 			// No default subnet, so nothing to do.
 			return ifaces, limitToOneInstance
 		}
-		// We assume the default subnet has a valid CIDR.
-		ip, ipnet, _ := net.ParseCIDR(defaultSubnet.CIDRBlock)
+		ip, ipnet, err := net.ParseCIDR(defaultSubnet.CIDRBlock)
+		if err != nil {
+			// This should never happen, because we're creating the
+			// default subnet in SetInitialAttributes().
+			panic(fmt.Sprintf("default subnet %q has invalid CIDR: %v", defaultSubnet.Id, err.Error()))
+		}
+		// Just pick a valid subnet IP, it doesn't have to be unique
+		// across instances, as this is a testing server.
 		ip[len(ip)-1] = 5
 		if !ipnet.Contains(ip) {
 			// This should never happen if the subnet CIDR is valid.
-			return ifaces, limitToOneInstance
+			panic(fmt.Sprintf("default subnet %q does not contain IP %q", defaultSubnet.Id, ip))
 		}
 		ifaces = append(ifaces, ec2.RunNetworkInterface{
 			Id:                  fmt.Sprintf("eni-%d", srv.ifaceId.next()),
@@ -679,11 +694,11 @@ func (srv *Server) createNICsOnRun(instId string, ifacesToCreate []ec2.RunNetwor
 	var createdNICs []ec2.NetworkInterface
 	for _, ifaceToCreate := range ifacesToCreate {
 		nicId := ifaceToCreate.Id
-		macAddress := fmt.Sprintf("%02d:81:60:cb:27:37", srv.ifaceId)
+		macAddress := fmt.Sprintf("%02x:81:60:cb:27:37", srv.ifaceId)
 		if nicId == "" {
 			// Simulate a NIC got created.
 			nicId = fmt.Sprintf("eni-%d", srv.ifaceId.next())
-			macAddress = fmt.Sprintf("%02d:81:60:cb:27:37", srv.ifaceId)
+			macAddress = fmt.Sprintf("%02x:81:60:cb:27:37", srv.ifaceId)
 		}
 		subnet := srv.subnets[ifaceToCreate.SubnetId]
 		groups := make([]ec2.SecurityGroup, len(ifaceToCreate.SecurityGroupIds))
@@ -691,9 +706,18 @@ func (srv *Server) createNICsOnRun(instId string, ifacesToCreate []ec2.RunNetwor
 			groups[i] = srv.group(ec2.SecurityGroup{Id: sgId}).ec2SecurityGroup()
 		}
 		var primaryIP string
+		// Pick the primary private IP for the interface.
+		// EC2 prefers to use PrivateIpAddress field over
+		// PrivateIpAddresses.0.PrivateIpAddress, when there
+		// is a single (hence primary) private IP, and when
+		// the interface was created automatically, rather than
+		// explicitly at RunInstances time.
+		//
+		// To simulate that, we need to set PrimaryIPAddress of the
+		// NIC and empty the PrivateIPs when there is only one address
+		// specified there.
 		if len(ifaceToCreate.PrivateIPs) > 0 {
 			primaryIP = ifaceToCreate.PrivateIPs[0].Address
-			// EC2 ignores the primary IP and does not list it in PrivateIPs.
 			ifaceToCreate.PrivateIPs = ifaceToCreate.PrivateIPs[1:]
 			if len(ifaceToCreate.PrivateIPs) == 0 {
 				ifaceToCreate.PrivateIPs = nil
@@ -1440,9 +1464,10 @@ func (srv *Server) createSubnet(w http.ResponseWriter, req *http.Request, reqId 
 		// Assign one automatically as AWS does.
 		availZone = "us-east-1b"
 	}
-	// Since we already checked the CIDR block is valid,
-	// we ignore the error from calcSubnetAvailIPs.
-	availIPs, _ := srv.calcSubnetAvailIPs(cidrBlock)
+	availIPs, err := srv.calcSubnetAvailIPs(cidrBlock)
+	if err != nil {
+		fatalf(400, "InvalidParameterValue", "bad subnet CIDR: %s", cidrBlock)
+	}
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
@@ -1553,7 +1578,7 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 		Description:      desc,
 		OwnerId:          ownerId,
 		Status:           "available",
-		MACAddress:       fmt.Sprintf("%02d:81:60:cb:27:37", srv.ifaceId),
+		MACAddress:       fmt.Sprintf("%02x:81:60:cb:27:37", srv.ifaceId),
 		PrivateIPAddress: primaryIP,
 		SourceDestCheck:  true,
 		Groups:           groups,
