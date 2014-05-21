@@ -602,6 +602,9 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) ([]ec2.RunNetwor
 		case "PrivateIpAddress":
 			privateIP := ec2.PrivateIP{Address: vals[0], IsPrimary: true}
 			iface.PrivateIPs = append(iface.PrivateIPs, privateIP)
+			// When a single private IP address is explicitly specified,
+			// only one instance can be launched according to the API docs.
+			limitToOneInstance = true
 		case "SecondaryPrivateIpAddressCount":
 			iface.SecondaryPrivateIPCount = atoi(vals[0])
 		case "PrivateIpAddresses":
@@ -711,11 +714,11 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 	var createdNICs []ec2.NetworkInterface
 	for _, ifaceToCreate := range ifacesToCreate {
 		nicId := ifaceToCreate.Id
-		macAddress := fmt.Sprintf("%02x:81:60:cb:27:37", srv.ifaceId)
+		macAddress := fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId)
 		if nicId == "" {
 			// Simulate a NIC got created.
 			nicId = fmt.Sprintf("eni-%d", srv.ifaceId.next())
-			macAddress = fmt.Sprintf("%02x:81:60:cb:27:37", srv.ifaceId)
+			macAddress = fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId)
 		}
 		groups := make([]ec2.SecurityGroup, len(ifaceToCreate.SecurityGroupIds))
 		for i, sgId := range ifaceToCreate.SecurityGroupIds {
@@ -1602,7 +1605,7 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 		Description:      desc,
 		OwnerId:          ownerId,
 		Status:           "available",
-		MACAddress:       fmt.Sprintf("%02x:81:60:cb:27:37", srv.ifaceId),
+		MACAddress:       fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId),
 		PrivateIPAddress: primaryIP,
 		SourceDestCheck:  true,
 		Groups:           groups,
