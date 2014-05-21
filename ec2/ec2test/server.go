@@ -401,8 +401,8 @@ func (srv *Server) SetInitialAttributes(attrs map[string][]string) {
 	for attrName, values := range attrs {
 		srv.attributes[attrName] = values
 		if attrName == "default-vpc" {
-			// If default-vpc were provided, create them and their
-			// subnet.
+			// The default-vpc attribute was provided, so create the
+			// respective VPCs and their subnets.
 			for _, vpcId := range values {
 				srv.vpcs[vpcId] = &vpc{ec2.VPC{
 					Id:              vpcId,
@@ -721,22 +721,15 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 		for i, sgId := range ifaceToCreate.SecurityGroupIds {
 			groups[i] = srv.group(ec2.SecurityGroup{Id: sgId}).ec2SecurityGroup()
 		}
-		var primaryIP string
-		// Pick the primary private IP for the interface.
-		// EC2 prefers to use PrivateIpAddress field over
-		// PrivateIpAddresses.0.PrivateIpAddress, when there
-		// is a single (hence primary) private IP, and when
-		// the interface was created automatically, rather than
-		// explicitly at RunInstances time.
-		//
-		// To simulate that, we need to set PrimaryIPAddress of the
-		// NIC and empty the PrivateIPs when there is only one address
-		// specified there.
-		if len(ifaceToCreate.PrivateIPs) > 0 {
-			primaryIP = ifaceToCreate.PrivateIPs[0].Address
-			ifaceToCreate.PrivateIPs = ifaceToCreate.PrivateIPs[1:]
-			if len(ifaceToCreate.PrivateIPs) == 0 {
-				ifaceToCreate.PrivateIPs = nil
+		// Find the primary private IP address for the NIC
+		// inside the PrivateIPs slice.
+		primaryIP := ""
+		privateDNSName := fmt.Sprintf("%s.internal.invalid", instId)
+		for i, ip := range ifaceToCreate.PrivateIPs {
+			if ip.IsPrimary {
+				primaryIP = ip.Address
+				ifaceToCreate.PrivateIPs[i].DNSName = privateDNSName
+				break
 			}
 		}
 		attach := ec2.NetworkInterfaceAttachment{
@@ -759,7 +752,7 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 			Status:           "in-use",
 			MACAddress:       macAddress,
 			PrivateIPAddress: primaryIP,
-			PrivateDNSName:   fmt.Sprintf("%s.internal.invalid", instId),
+			PrivateDNSName:   privateDNSName,
 			SourceDestCheck:  true,
 			Groups:           groups,
 			PrivateIPs:       ifaceToCreate.PrivateIPs,
@@ -1497,7 +1490,7 @@ func (srv *Server) createSubnet(w http.ResponseWriter, req *http.Request, reqId 
 	}
 	availIPs, err := srv.calcSubnetAvailIPs(cidrBlock)
 	if err != nil {
-		fatalf(400, "InvalidParameterValue", "bad subnet CIDR: %s", cidrBlock)
+		fatalf(400, "InvalidParameterValue", "calcSubnetAvailIPs(%q) failed: %v", cidrBlock, err)
 	}
 
 	srv.mu.Lock()
