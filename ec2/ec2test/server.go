@@ -551,20 +551,21 @@ func (srv *Server) formToGroups(form url.Values) []*securityGroup {
 // passed to RunInstances, and returns them, along with a
 // limitToOneInstance flag. The flag is set only when an existing
 // network interface id is specified, which according to the API
-// limits the number of instances to 1. If no network interfaces are
-// specified, it creates a default interface per instance, to simulate
-// what EC2 does.
-func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.RunNetworkInterface, limitToOneInstance bool) {
-	limitToOneInstance = false
+// limits the number of instances to 1.
+func (srv *Server) parseRunNetworkInterfaces(req *http.Request) ([]ec2.RunNetworkInterface, bool) {
+	ifaces := []ec2.RunNetworkInterface{}
+	limitToOneInstance := false
 	for attr, vals := range req.Form {
 		if !strings.HasPrefix(attr, "NetworkInterface.") {
+			// Only process network interface params.
 			continue
 		}
 		fields := strings.Split(attr, ".")
 		if len(fields) < 3 || len(vals) != 1 {
 			fatalf(400, "InvalidParameterValue", "bad param %q: %v", attr, vals)
 		}
-		index := atoi(fields[1]) // NetworkInterface.<#>
+		index := atoi(fields[1])
+		// Field name format: NetworkInterface.<index>.<fieldName>....
 		for len(ifaces)-1 < index {
 			ifaces = append(ifaces, ec2.RunNetworkInterface{})
 		}
@@ -604,6 +605,7 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.Ru
 		case "SecondaryPrivateIpAddressCount":
 			iface.SecondaryPrivateIPCount = atoi(vals[0])
 		case "PrivateIpAddresses":
+			// ...PrivateIpAddress.<ipIndex>.<subFieldName>: vals[0]
 			if len(fields) < 4 {
 				fatalf(400, "InvalidParameterValue", "bad param %q: %v", attr, vals)
 			}
@@ -627,6 +629,7 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.Ru
 			}
 			iface.PrivateIPs[ipIndex] = privateIP
 		case "SecurityGroupId":
+			// ...SecurityGroupId.<#>:  <sgId>
 			for _, sgId := range vals {
 				if _, ok := srv.groups[sgId]; !ok {
 					fatalf(400, "InvalidParameterValue", "no such security group id %q", sgId)
@@ -638,59 +641,73 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) (ifaces []ec2.Ru
 		}
 		ifaces[index] = iface
 	}
-	if len(ifaces) == 0 {
-		// None given, so create one to simulate what EC2 does.
-		defaultVPCId := ""
-		for _, vpc := range srv.vpcs {
-			if vpc.IsDefault {
-				defaultVPCId = vpc.Id
-				break
-			}
-		}
-		if defaultVPCId == "" {
-			// No default VPC, so nothing to do.
-			return ifaces, limitToOneInstance
-		}
-		var defaultSubnet *subnet
-		for _, subnet := range srv.subnets {
-			if subnet.VPCId == defaultVPCId && subnet.DefaultForAZ {
-				defaultSubnet = subnet
-				break
-			}
-		}
-		if defaultSubnet.Id == "" {
-			// No default subnet, so nothing to do.
-			return ifaces, limitToOneInstance
-		}
-		ip, ipnet, err := net.ParseCIDR(defaultSubnet.CIDRBlock)
-		if err != nil {
-			// This should never happen, because we're creating the
-			// default subnet in SetInitialAttributes().
-			panic(fmt.Sprintf("default subnet %q has invalid CIDR: %v", defaultSubnet.Id, err.Error()))
-		}
-		// Just pick a valid subnet IP, it doesn't have to be unique
-		// across instances, as this is a testing server.
-		ip[len(ip)-1] = 5
-		if !ipnet.Contains(ip) {
-			// This should never happen if the subnet CIDR is valid.
-			panic(fmt.Sprintf("default subnet %q does not contain IP %q", defaultSubnet.Id, ip))
-		}
-		ifaces = append(ifaces, ec2.RunNetworkInterface{
-			Id:                  fmt.Sprintf("eni-%d", srv.ifaceId.next()),
-			DeviceIndex:         0,
-			SubnetId:            defaultSubnet.Id,
-			DeleteOnTermination: true,
-			PrivateIPs: []ec2.PrivateIP{
-				{Address: ip.String(), IsPrimary: true},
-			},
-		})
-	}
 	return ifaces, limitToOneInstance
 }
 
-// createNICsOnRun creates any network interfaces specified in
-// ifacesToCreate in the server and returns them.
-func (srv *Server) createNICsOnRun(instId string, ifacesToCreate []ec2.RunNetworkInterface) []ec2.NetworkInterface {
+// getDefaultSubnet returns the first default subnet for the AZ in the
+// default VPC (if available).
+func (srv *Server) getDefaultSubnet() *subnet {
+	// We need to get the default VPC id and one of its subnets to use.
+	defaultVPCId := ""
+	for _, vpc := range srv.vpcs {
+		if vpc.IsDefault {
+			defaultVPCId = vpc.Id
+			break
+		}
+	}
+	if defaultVPCId == "" {
+		// No default VPC, so nothing to do.
+		return nil
+	}
+	for _, subnet := range srv.subnets {
+		if subnet.VPCId == defaultVPCId && subnet.DefaultForAZ {
+			return subnet
+		}
+	}
+	return nil
+}
+
+// addDefaultNIC requests the creation of a default network interface
+// for each instance to launch in RunInstances, using the given
+// instance subnet, and it's called when no explicit NICs are given.
+// It returns the populated RunNetworkInterface slice to add to
+// RunInstances params.
+func (srv *Server) addDefaultNIC(instSubnet *subnet) []ec2.RunNetworkInterface {
+	if instSubnet == nil {
+		// No subnet specified, nothing to do.
+		return nil
+	}
+
+	ip, ipnet, err := net.ParseCIDR(instSubnet.CIDRBlock)
+	if err != nil {
+		panic(fmt.Sprintf("subnet %q has invalid CIDR: %v", instSubnet.Id, err.Error()))
+	}
+	// Just pick a valid subnet IP, it doesn't have to be unique
+	// across instances, as this is a testing server.
+	ip[len(ip)-1] = 5
+	if !ipnet.Contains(ip) {
+		panic(fmt.Sprintf("%q does not contain IP %q", instSubnet.Id, ip))
+	}
+	return []ec2.RunNetworkInterface{{
+		Id:                  fmt.Sprintf("eni-%d", srv.ifaceId.next()),
+		DeviceIndex:         0,
+		Description:         "created by ec2test server",
+		DeleteOnTermination: true,
+		PrivateIPs: []ec2.PrivateIP{
+			{Address: ip.String(), IsPrimary: true},
+		},
+	}}
+}
+
+// createNICsOnRun creates and returns any network interfaces
+// specified in ifacesToCreate in the server for the given instance id
+// and subnet.
+func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCreate []ec2.RunNetworkInterface) []ec2.NetworkInterface {
+	if instSubnet == nil {
+		// No subnet specified, nothing to do.
+		return nil
+	}
+
 	var createdNICs []ec2.NetworkInterface
 	for _, ifaceToCreate := range ifacesToCreate {
 		nicId := ifaceToCreate.Id
@@ -700,7 +717,6 @@ func (srv *Server) createNICsOnRun(instId string, ifacesToCreate []ec2.RunNetwor
 			nicId = fmt.Sprintf("eni-%d", srv.ifaceId.next())
 			macAddress = fmt.Sprintf("%02x:81:60:cb:27:37", srv.ifaceId)
 		}
-		subnet := srv.subnets[ifaceToCreate.SubnetId]
 		groups := make([]ec2.SecurityGroup, len(ifaceToCreate.SecurityGroupIds))
 		for i, sgId := range ifaceToCreate.SecurityGroupIds {
 			groups[i] = srv.group(ec2.SecurityGroup{Id: sgId}).ec2SecurityGroup()
@@ -735,9 +751,9 @@ func (srv *Server) createNICsOnRun(instId string, ifacesToCreate []ec2.RunNetwor
 		srv.attachments[attach.Id] = &attachment{attach}
 		nic := ec2.NetworkInterface{
 			Id:               nicId,
-			SubnetId:         subnet.Id,
-			VPCId:            subnet.VPCId,
-			AvailZone:        subnet.AvailZone,
+			SubnetId:         instSubnet.Id,
+			VPCId:            instSubnet.VPCId,
+			AvailZone:        instSubnet.AvailZone,
 			Description:      ifaceToCreate.Description,
 			OwnerId:          ownerId,
 			Status:           "in-use",
@@ -790,27 +806,38 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	var vpcId string
-	subnetId := req.Form.Get("SubnetId")
-	if subnetId != "" {
-		sub, found := srv.subnets[subnetId]
-		if !found {
-			fatalf(400, "InvalidSubnetID.NotFound", "subnet %s not found", subnetId)
-		}
-		vpcId = sub.VPCId
-	}
-
 	// make sure that form fields are correct before creating the reservation.
 	instType := req.Form.Get("InstanceType")
 	imageId := req.Form.Get("ImageId")
 
 	r := srv.newReservation(srv.formToGroups(req.Form))
 
-	// Handle network interfaces creation, or if none specified,
-	// create one to simulate what EC2 does.
+	// If the user specifies an explicit subnet id, use it.
+	// Otherwise, get a subnet from the default VPC.
+	userSubnetId := req.Form.Get("SubnetId")
+	instSubnet := srv.subnets[userSubnetId]
+	if instSubnet == nil && userSubnetId != "" {
+		fatalf(400, "InvalidSubnetID.NotFound", "subnet %s not found", userSubnetId)
+	}
+	if userSubnetId == "" {
+		instSubnet = srv.getDefaultSubnet()
+	}
+
+	// Handle network interfaces parsing.
 	ifacesToCreate, limitToOneInstance := srv.parseRunNetworkInterfaces(req)
+	if len(ifacesToCreate) > 0 && userSubnetId != "" {
+		// Since we have an instance-level subnet id
+		// specified, we cannot add network interfaces
+		// in the same request. See http://goo.gl/9aqbT9.
+		fatalf(400, "InvalidParameterCombination", "Network interfaces and an instance-level subnet ID may not be specified on the same request")
+	}
 	if limitToOneInstance {
 		max = 1
+	}
+	if len(ifacesToCreate) == 0 {
+		// No NICs specified, so create a default one to simulate what
+		// EC2 does.
+		ifacesToCreate = srv.addDefaultNIC(instSubnet)
 	}
 
 	var resp ec2.RunInstancesResp
@@ -819,8 +846,14 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	resp.OwnerId = ownerId
 
 	for i := 0; i < max; i++ {
-		inst := srv.newInstance(r, instType, imageId, srv.initialInstanceState, subnetId, vpcId)
-		inst.ifaces = srv.createNICsOnRun(inst.id(), ifacesToCreate)
+		inst := srv.newInstance(r, instType, imageId, srv.initialInstanceState)
+		// Create any NICs on the instance subnet (if any), and then
+		// save the VPC and subnet ids on the instance, as EC2 does.
+		inst.ifaces = srv.createNICsOnRun(inst.id(), instSubnet, ifacesToCreate)
+		if instSubnet != nil {
+			inst.subnetId = instSubnet.Id
+			inst.vpcId = instSubnet.VPCId
+		}
 		inst.UserData = userData
 		resp.Instances = append(resp.Instances, inst.ec2instance())
 	}
@@ -863,7 +896,9 @@ func (srv *Server) NewInstancesVPC(vpcId, subnetId string, n int, instType strin
 
 	ids := make([]string, n)
 	for i := 0; i < n; i++ {
-		inst := srv.newInstance(r, instType, imageId, state, subnetId, vpcId)
+		inst := srv.newInstance(r, instType, imageId, state)
+		inst.vpcId = vpcId
+		inst.subnetId = subnetId
 		ids[i] = inst.id()
 	}
 	return ids
@@ -877,17 +912,13 @@ func (srv *Server) NewInstances(n int, instType string, imageId string, state ec
 	return srv.NewInstancesVPC("", "", n, instType, imageId, state, groups)
 }
 
-func (srv *Server) newInstance(r *reservation, instType string, imageId string, state ec2.InstanceState, subnetId, vpcId string) *Instance {
+func (srv *Server) newInstance(r *reservation, instType string, imageId string, state ec2.InstanceState) *Instance {
 	inst := &Instance{
 		seq:         srv.maxId.next(),
 		instType:    instType,
 		imageId:     imageId,
 		state:       state,
 		reservation: r,
-	}
-	if vpcId != "" && subnetId != "" {
-		inst.vpcId = vpcId
-		inst.subnetId = subnetId
 	}
 	id := inst.id()
 	srv.instances[id] = inst
