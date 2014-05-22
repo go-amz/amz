@@ -117,6 +117,41 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 	c.Check(resp.Reservations[0].Instances[0].DNSName, Equals, id+".testing.invalid")
 }
 
+// getDefaultVPCIdAndSubnets returns the default VPC id and a list of
+// its default subnets. If fails if there is no default VPC or at
+// least one subnet in it.
+func (s *ServerTests) getDefaultVPCIdAndSubnets(c *C) (string, []ec2.Subnet) {
+	resp1, err := s.ec2.AccountAttributes("default-vpc")
+	c.Assert(err, IsNil)
+	c.Assert(resp1.Attributes, HasLen, 1)
+	c.Assert(resp1.Attributes[0].Name, Equals, "default-vpc")
+	c.Assert(resp1.Attributes[0].Values, HasLen, 1)
+	c.Assert(resp1.Attributes[0].Values[0], Not(Equals), "")
+	defaultVPCId := resp1.Attributes[0].Values[0]
+	if defaultVPCId == "none" {
+		c.Fatalf("no default VPC for region %q", s.ec2.Region.Name)
+	}
+	filter := ec2.NewFilter()
+	filter.Add("defaultForAz", "true")
+	filter.Add("vpc-id", defaultVPCId)
+	resp2, err := s.ec2.Subnets(nil, filter)
+	c.Assert(err, IsNil)
+	defaultSubnets := resp2.Subnets
+	if len(defaultSubnets) < 1 {
+		c.Fatalf("no default subnets for VPC %q", defaultVPCId)
+	}
+
+	return defaultVPCId, defaultSubnets
+}
+
+func validIPForSubnet(c *C, subnet ec2.Subnet, startFrom byte) string {
+	ip, ipnet, err := net.ParseCIDR(subnet.CIDRBlock)
+	c.Assert(err, IsNil)
+	ip[len(ip)-1] = startFrom
+	c.Assert(ipnet.Contains(ip), Equals, true)
+	return ip.String()
+}
+
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
 // It will only be activated if the -amazon flag is specified.
 type AmazonServerSuite struct {
@@ -158,6 +193,146 @@ func (s *ServerTests) TestDescribeAccountAttributes(c *C) {
 			c.Fatalf("unexpected account attribute %q: %v", attr.Name, attr)
 		}
 	}
+}
+
+func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
+	defaultVPCId, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+	subnet := defaultSubnets[0]
+
+	g0 := s.makeTestGroupVPC(c, defaultVPCId, "goamz-test0", "ec2test group 0")
+	g1 := s.makeTestGroupVPC(c, defaultVPCId, "goamz-test1", "ec2test group 1")
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
+
+	ip1 := validIPForSubnet(c, subnet, 5)
+	ip2 := validIPForSubnet(c, subnet, 6)
+	list, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
+			DeviceIndex:         0,
+			SubnetId:            subnet.Id,
+			Description:         "first nic",
+			SecurityGroupIds:    []string{g0.Id, g1.Id},
+			DeleteOnTermination: true,
+			PrivateIPs: []ec2.PrivateIP{
+				{Address: ip1, IsPrimary: true},
+				{Address: ip2, IsPrimary: false},
+			}}}})
+	c.Assert(err, IsNil)
+
+	inst := list.Instances[0]
+	c.Assert(inst, NotNil)
+	c.Assert(inst.NetworkInterfaces, HasLen, 1)
+
+	id := inst.InstanceId
+	defer s.ec2.TerminateInstances([]string{id})
+
+	c.Check(inst.VPCId, Equals, subnet.VPCId)
+	c.Check(inst.SubnetId, Equals, subnet.Id)
+	iface := inst.NetworkInterfaces[0]
+	c.Check(iface.Id, Matches, "eni-.+")
+	c.Check(iface.Attachment.DeviceIndex, Equals, 0)
+	c.Check(iface.Attachment.Id, Matches, "eni-attach-.+")
+	c.Check(iface.SubnetId, Equals, subnet.Id)
+	c.Check(iface.PrivateIPAddress, Equals, ip1)
+	c.Check(iface.Description, Equals, "first nic")
+	c.Check(iface.Groups, HasLen, 2)
+	for _, group := range iface.Groups {
+		if group.Id == g0.Id {
+			c.Check(group.Name, Equals, g0.Name)
+		} else if group.Id == g1.Id {
+			c.Check(group.Name, Equals, g1.Name)
+		}
+	}
+	for _, ip := range iface.PrivateIPs {
+		if ip.IsPrimary {
+			c.Check(ip.Address, Equals, ip1)
+		} else {
+			c.Check(ip.Address, Equals, ip2)
+		}
+	}
+}
+
+func (s *ServerTests) TestRunInstancesVPCReturnsErrorWithBothInstanceAndNICSubnetIds(c *C) {
+	_, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+	subnet := defaultSubnets[0]
+
+	_, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		SubnetId:     subnet.Id,
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
+			DeviceIndex:         0,
+			SubnetId:            subnet.Id,
+			Description:         "first nic",
+			DeleteOnTermination: true,
+		}},
+	})
+	c.Assert(err, NotNil)
+	c.Check(errorCode(err), Equals, "InvalidParameterCombination")
+}
+
+func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
+	defaultVPCId, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+
+	params := &ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+	}
+	if subnet != nil {
+		params.SubnetId = subnet.Id
+	} else {
+		subnet = &defaultSubnets[0]
+	}
+	list, err := s.ec2.RunInstances(params)
+	c.Assert(err, IsNil)
+
+	inst := list.Instances[0]
+	c.Assert(inst, NotNil)
+	c.Assert(inst.NetworkInterfaces, HasLen, 1)
+
+	id := inst.InstanceId
+	defer s.ec2.TerminateInstances([]string{id})
+
+	c.Check(inst.VPCId, Equals, defaultVPCId)
+	if inst.SubnetId != subnet.Id {
+		// Since we don't specify which AZ to use,
+		// the instance might launch in any one.
+		for _, sub := range defaultSubnets {
+			if inst.SubnetId == sub.Id {
+				subnet = &sub
+			}
+		}
+	}
+	_, ipnet, err := net.ParseCIDR(subnet.CIDRBlock)
+	c.Assert(err, IsNil)
+
+	c.Check(inst.SubnetId, Equals, subnet.Id)
+	iface := inst.NetworkInterfaces[0]
+	c.Assert(iface.Id, Matches, "eni-.+")
+	c.Assert(iface.SubnetId, Equals, subnet.Id)
+	c.Assert(iface.VPCId, Equals, subnet.VPCId)
+	if len(iface.PrivateIPs) > 0 {
+		// AWS doesn't always fill in the PrivateIPs slice.
+		expectIP := ec2.PrivateIP{
+			Address:   iface.PrivateIPAddress,
+			DNSName:   iface.PrivateDNSName,
+			IsPrimary: true,
+		}
+		c.Assert(iface.PrivateIPs, DeepEquals, []ec2.PrivateIP{expectIP})
+	}
+	c.Assert(ipnet.Contains(net.ParseIP(iface.PrivateIPAddress)), Equals, true)
+	c.Assert(iface.PrivateDNSName, Not(Equals), "")
+	c.Assert(iface.Attachment.Id, Matches, "eni-attach-.+")
+}
+
+func (s *ServerTests) TestRunInstancesVPCCreatesDefaultNICWithoutSubnetIdOrNICs(c *C) {
+	s.testCreateDefaultNIC(c, nil)
+}
+
+func (s *ServerTests) TestRunInstancesVPCCreatesDefaultNICWithSubnetIdNoNICs(c *C) {
+	_, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+	s.testCreateDefaultNIC(c, &defaultSubnets[0])
 }
 
 func terminateInstances(c *C, e *ec2.EC2, ids []string) {
