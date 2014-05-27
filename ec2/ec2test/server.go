@@ -1507,7 +1507,7 @@ func (srv *Server) describeVpcs(w http.ResponseWriter, req *http.Request, reqId 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	idMap := collectIds(req.Form, "VpcId.")
+	idMap := parseIDs(req.Form, "VpcId.")
 	f := newFilter(req.Form)
 	var resp ec2.VPCsResp
 	resp.RequestId = reqId
@@ -1581,7 +1581,7 @@ func (srv *Server) describeSubnets(w http.ResponseWriter, req *http.Request, req
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	idMap := collectIds(req.Form, "SubnetId.")
+	idMap := parseIDs(req.Form, "SubnetId.")
 	f := newFilter(req.Form)
 	var resp ec2.SubnetsResp
 	resp.RequestId = reqId
@@ -1688,7 +1688,7 @@ func (srv *Server) describeIFaces(w http.ResponseWriter, req *http.Request, reqI
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	idMap := collectIds(req.Form, "NetworkInterfaceId.")
+	idMap := parseIDs(req.Form, "NetworkInterfaceId.")
 	f := newFilter(req.Form)
 	var resp ec2.NetworkInterfacesResp
 	resp.RequestId = reqId
@@ -1754,7 +1754,7 @@ func (srv *Server) accountAttributes(w http.ResponseWriter, req *http.Request, r
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	attrsMap := collectIds(req.Form, "AttributeName.")
+	attrsMap := parseIDs(req.Form, "AttributeName.")
 	var resp ec2.AccountAttributesResp
 	resp.RequestId = reqId
 	for attrName, _ := range attrsMap {
@@ -1769,7 +1769,7 @@ func (srv *Server) accountAttributes(w http.ResponseWriter, req *http.Request, r
 
 func (srv *Server) assignPrivateIP(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	nic := srv.iface(req.Form.Get("NetworkInterfaceId"))
-	extraIPs := collectIds(req.Form, "PrivateIpAddress.")
+	extraIPs := parseInOrder(req.Form, "PrivateIpAddress.")
 	count := req.Form.Get("SecondaryPrivateIpAddressCount")
 	secondaryIPs := 0
 	if count != "" {
@@ -1779,11 +1779,7 @@ func (srv *Server) assignPrivateIP(w http.ResponseWriter, req *http.Request, req
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	ips := make([]string, len(extraIPs))
-	for ip, index := range extraIPs {
-		ips[index] = ip
-	}
-	err := srv.addPrivateIPs(nic, secondaryIPs, ips)
+	err := srv.addPrivateIPs(nic, secondaryIPs, extraIPs)
 	if err != nil {
 		fatalf(400, "InvalidParameterValue", err.Error())
 	}
@@ -1795,12 +1791,12 @@ func (srv *Server) assignPrivateIP(w http.ResponseWriter, req *http.Request, req
 
 func (srv *Server) unassignPrivateIP(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	nic := srv.iface(req.Form.Get("NetworkInterfaceId"))
-	ips := collectIds(req.Form, "PrivateIpAddress.")
+	ips := parseInOrder(req.Form, "PrivateIpAddress.")
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	for ip, _ := range ips {
+	for _, ip := range ips {
 		if err := srv.removePrivateIP(nic, ip); err != nil {
 			fatalf(400, "InvalidParameterValue", err.Error())
 		}
@@ -1899,26 +1895,42 @@ func (srv *Server) attachment(id string) *attachment {
 	return att
 }
 
-// collectIds takes all values with the given prefix from form and
-// returns a map with the values as keys, and their index in the
-// request form as values.
-func collectIds(form url.Values, prefix string) map[string]int {
-	idMap := make(map[string]int)
-	for name, vals := range form {
-		if !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		val := vals[0]
-		parts := strings.Split(name, ".")
-		if len(parts) != 2 {
-			panic(fmt.Sprintf("expected indexed key %q", name))
-		}
-		index := atoi(parts[1])
-		if _, ok := idMap[val]; !ok {
-			idMap[val] = index
+// parseIDs takes all form fields with the given prefix and returns a
+// map with their values as keys.
+func parseIDs(form url.Values, prefix string) map[string]bool {
+	idMap := make(map[string]bool)
+	for field, allValues := range form {
+		value := allValues[0]
+		if strings.HasPrefix(field, prefix) && !idMap[value] {
+			idMap[value] = true
 		}
 	}
 	return idMap
+}
+
+// parseInOrder takes all form fields with the given prefix and
+// returns their values in request order. Suitable for AWS API
+// parameters defining lists, e.g. with fields like
+// "PrivateIpAddress.0": v1, "PrivateIpAddress.1" v2, it returns
+// []string{v1, v2}.
+func parseInOrder(form url.Values, prefix string) []string {
+	idMap := parseIDs(form, prefix)
+	results := make([]string, len(idMap))
+	for field, allValues := range form {
+		if !strings.HasPrefix(field, prefix) {
+			continue
+		}
+		value := allValues[0]
+		parts := strings.Split(field, ".")
+		if len(parts) != 2 {
+			panic(fmt.Sprintf("expected indexed key %q", field))
+		}
+		index := atoi(parts[1])
+		if idMap[value] {
+			results[index] = value
+		}
+	}
+	return results
 }
 
 type counter int
