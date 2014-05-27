@@ -286,6 +286,54 @@ func (i *iface) matchAttr(attr, value string) (ok bool, err error) {
 	return false, fmt.Errorf("unknown attribute %q", attr)
 }
 
+func (srv *Server) addPrivateIPs(nic *iface, numToAdd int, addrs []string) error {
+	for _, addr := range addrs {
+		newIP := ec2.PrivateIP{Address: addr, IsPrimary: false}
+		nic.PrivateIPs = append(nic.PrivateIPs, newIP)
+	}
+	if numToAdd == 0 {
+		// Nothing more to do.
+		return nil
+	}
+	firstIP := ""
+	if len(nic.PrivateIPs) > 0 {
+		firstIP = nic.PrivateIPs[len(nic.PrivateIPs)-1].Address
+	} else {
+		// Find the primary IP, if available, otherwise use
+		// the subnet CIDR to generate a valid IP to use.
+		firstIP = nic.PrivateIPAddress
+		if firstIP == "" {
+			sub := srv.subnets[nic.SubnetId]
+			if sub == nil {
+				return fmt.Errorf("NIC %q uses invalid subnet id: %v", nic.Id, nic.SubnetId)
+			}
+			netIP, _, err := net.ParseCIDR(sub.CIDRBlock)
+			if err != nil {
+				return fmt.Errorf("subnet %q has bad CIDR: %v", sub.Id, err)
+			}
+			firstIP = netIP.String()
+		}
+	}
+	ip := net.ParseIP(firstIP)
+	for i := 0; i < numToAdd; i++ {
+		ip[len(ip)-1] += 1
+		newIP := ec2.PrivateIP{Address: ip.String(), IsPrimary: false}
+		nic.PrivateIPs = append(nic.PrivateIPs, newIP)
+	}
+	return nil
+}
+
+func (srv *Server) removePrivateIP(nic *iface, addr string) error {
+	for i, privateIP := range nic.PrivateIPs {
+		if privateIP.Address == addr {
+			// Remove it, preserving order.
+			nic.PrivateIPs = append(nic.PrivateIPs[:i], nic.PrivateIPs[i+1:]...)
+			return nil
+		}
+	}
+	return fmt.Errorf("NIC %q does not have IP %q to remove", nic.Id, addr)
+}
+
 type attachment struct {
 	ec2.NetworkInterfaceAttachment
 }
@@ -311,6 +359,8 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"AttachNetworkInterface":        (*Server).attachIFace,
 	"DetachNetworkInterface":        (*Server).detachIFace,
 	"DescribeAccountAttributes":     (*Server).accountAttributes,
+	"AssignPrivateIpAddresses":      (*Server).assignPrivateIP,
+	"UnassignPrivateIpAddresses":    (*Server).unassignPrivateIP,
 }
 
 const ownerId = "9876"
@@ -1463,7 +1513,8 @@ func (srv *Server) describeVpcs(w http.ResponseWriter, req *http.Request, reqId 
 	resp.RequestId = reqId
 	for _, v := range srv.vpcs {
 		ok, err := f.ok(v)
-		if ok && (len(idMap) == 0 || idMap[v.Id]) {
+		_, known := idMap[v.Id]
+		if ok && (len(idMap) == 0 || known) {
 			resp.VPCs = append(resp.VPCs, v.VPC)
 		} else if err != nil {
 			fatalf(400, "InvalidParameterValue", "describe VPCs: %v", err)
@@ -1536,7 +1587,8 @@ func (srv *Server) describeSubnets(w http.ResponseWriter, req *http.Request, req
 	resp.RequestId = reqId
 	for _, s := range srv.subnets {
 		ok, err := f.ok(s)
-		if ok && (len(idMap) == 0 || idMap[s.Id]) {
+		_, known := idMap[s.Id]
+		if ok && (len(idMap) == 0 || known) {
 			resp.Subnets = append(resp.Subnets, s.Subnet)
 		} else if err != nil {
 			fatalf(400, "InvalidParameterValue", "describe subnets: %v", err)
@@ -1642,7 +1694,8 @@ func (srv *Server) describeIFaces(w http.ResponseWriter, req *http.Request, reqI
 	resp.RequestId = reqId
 	for _, i := range srv.ifaces {
 		ok, err := f.ok(i)
-		if ok && (len(idMap) == 0 || idMap[i.Id]) {
+		_, known := idMap[i.Id]
+		if ok && (len(idMap) == 0 || known) {
 			resp.Interfaces = append(resp.Interfaces, i.NetworkInterface)
 		} else if err != nil {
 			fatalf(400, "InvalidParameterValue", "describe ifaces: %v", err)
@@ -1712,6 +1765,50 @@ func (srv *Server) accountAttributes(w http.ResponseWriter, req *http.Request, r
 		resp.Attributes = append(resp.Attributes, ec2.AccountAttribute{attrName, vals})
 	}
 	return &resp
+}
+
+func (srv *Server) assignPrivateIP(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	nic := srv.iface(req.Form.Get("NetworkInterfaceId"))
+	extraIPs := collectIds(req.Form, "PrivateIpAddress.")
+	count := req.Form.Get("SecondaryPrivateIpAddressCount")
+	secondaryIPs := 0
+	if count != "" {
+		secondaryIPs = atoi(count)
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	ips := make([]string, len(extraIPs))
+	for ip, index := range extraIPs {
+		ips[index] = ip
+	}
+	err := srv.addPrivateIPs(nic, secondaryIPs, ips)
+	if err != nil {
+		fatalf(400, "InvalidParameterValue", err.Error())
+	}
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{"", "AssignPrivateIpAddresses"},
+		RequestId: reqId,
+	}
+}
+
+func (srv *Server) unassignPrivateIP(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	nic := srv.iface(req.Form.Get("NetworkInterfaceId"))
+	ips := collectIds(req.Form, "PrivateIpAddress.")
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	for ip, _ := range ips {
+		if err := srv.removePrivateIP(nic, ip); err != nil {
+			fatalf(400, "InvalidParameterValue", err.Error())
+		}
+	}
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{"", "UnassignPrivateIpAddresses"},
+		RequestId: reqId,
+	}
 }
 
 func (r *reservation) hasRunningMachine() bool {
@@ -1803,12 +1900,22 @@ func (srv *Server) attachment(id string) *attachment {
 }
 
 // collectIds takes all values with the given prefix from form and
-// returns a map with the ids as keys.
-func collectIds(form url.Values, prefix string) map[string]bool {
-	idMap := make(map[string]bool)
+// returns a map with the values as keys, and their index in the
+// request form as values.
+func collectIds(form url.Values, prefix string) map[string]int {
+	idMap := make(map[string]int)
 	for name, vals := range form {
-		if strings.HasPrefix(name, prefix) {
-			idMap[vals[0]] = true
+		if !strings.HasPrefix(name, prefix) {
+			continue
+		}
+		val := vals[0]
+		parts := strings.Split(name, ".")
+		if len(parts) != 2 {
+			panic(fmt.Sprintf("expected indexed key %q", name))
+		}
+		index := atoi(parts[1])
+		if _, ok := idMap[val]; !ok {
+			idMap[val] = index
 		}
 	}
 	return idMap

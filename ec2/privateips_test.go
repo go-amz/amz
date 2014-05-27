@@ -9,10 +9,12 @@
 package ec2_test
 
 import (
+	"strings"
+	"time"
+
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	. "launchpad.net/gocheck"
-	"time"
 )
 
 // Private IP tests with example responses
@@ -51,7 +53,7 @@ func (s *S) TestUnassignPrivateIPAddressesExample(c *C) {
 
 // Private IP tests run live against EC2.
 
-func (s *AmazonServerSuite) TestAssignUnassignPrivateIPs(c *C) {
+func (s *ServerTests) TestAssignUnassignPrivateIPs(c *C) {
 	vpcResp, err := s.ec2.CreateVPC("10.7.0.0/16", "")
 	c.Assert(err, IsNil)
 	vpcId := vpcResp.VPC.Id
@@ -61,11 +63,11 @@ func (s *AmazonServerSuite) TestAssignUnassignPrivateIPs(c *C) {
 	subId := subResp.Subnet.Id
 	defer s.deleteSubnets(c, []string{subId})
 
-	// Launch a m1.small instance, so we can later assign up to 4
-	// private IPs.
+	// Launch a m1.medium instance, so we can later assign up to 6
+	// private IPs per NIC.
 	instList, err := s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:      imageId,
-		InstanceType: "m1.small",
+		InstanceType: "m1.medium",
 		SubnetId:     subId,
 	})
 	c.Assert(err, IsNil)
@@ -115,17 +117,24 @@ func (s *AmazonServerSuite) TestAssignUnassignPrivateIPs(c *C) {
 	c.Assert(err, IsNil)
 
 	expectIPs := append([]string{newNIC.PrivateIPAddress}, ips...)
-	s.waitForAddresses(c, newNIC.Id, expectIPs)
+	s.waitForAddresses(c, newNIC.Id, expectIPs, false)
 
-	// And finally, unassign them.
+	// Try using SecondaryPrivateIPCount.
+	_, err = s.ec2.AssignPrivateIPAddresses(newNIC.Id, nil, 2, false)
+	c.Assert(err, IsNil)
+
+	expectIPs = append(expectIPs, []string{"10.7.1.*", "10.7.1.*"}...)
+	ips = s.waitForAddresses(c, newNIC.Id, expectIPs, true)
+
+	// And finally, unassign them all, except the primary.
 	_, err = s.ec2.UnassignPrivateIPAddresses(newNIC.Id, ips)
 	c.Assert(err, IsNil)
 
 	expectIPs = []string{newNIC.PrivateIPAddress}
-	s.waitForAddresses(c, newNIC.Id, expectIPs)
+	s.waitForAddresses(c, newNIC.Id, expectIPs, false)
 }
 
-func (s *AmazonServerSuite) waitForAddresses(c *C, nicId string, ips []string) {
+func (s *ServerTests) waitForAddresses(c *C, nicId string, ips []string, skipPrimary bool) []string {
 	// Wait for the given IPs to appear on the NIC, retrying if needed.
 	testAttempt := aws.AttemptStrategy{
 		Total: 5 * time.Minute,
@@ -147,11 +156,22 @@ func (s *AmazonServerSuite) waitForAddresses(c *C, nicId string, ips []string) {
 			c.Logf("addresses in %v: %v; still waiting", iface.Id, iface.PrivateIPs)
 			continue
 		}
+
+		var foundIPs []string
 		for i, ip := range iface.PrivateIPs {
-			c.Assert(ip.Address, Equals, ips[i])
+			if strings.HasSuffix(ips[i], ".*") {
+				c.Check(ip.Address, Matches, ips[i])
+			} else {
+				c.Check(ip.Address, Equals, ips[i])
+			}
+			if skipPrimary && ip.IsPrimary {
+				continue
+			}
+			foundIPs = append(foundIPs, ip.Address)
 		}
 		c.Logf("all addresses updated")
-		return
+		return foundIPs
 	}
 	c.Fatalf("timeout while waiting for the IPs to get updated")
+	return nil
 }
