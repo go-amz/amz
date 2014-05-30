@@ -1,11 +1,12 @@
 package ec2_test
 
 import (
+	"testing"
+
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/testutil"
 	. "launchpad.net/gocheck"
-	"testing"
 )
 
 func Test(t *testing.T) {
@@ -105,7 +106,33 @@ func (s *S) TestRunInstancesExample(c *C) {
 			DeleteOnTermination: true,
 			IOPS:                1000,
 		}},
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
+			DeviceIndex: 0,
+			SubnetId:    "subnet-id",
+			Description: "eth0",
+			PrivateIPs: []ec2.PrivateIP{
+				{Address: "10.0.0.25", IsPrimary: true},
+			},
+			DeleteOnTermination:     true,
+			SecurityGroupIds:        []string{"sg-1", "sg-2"},
+			SecondaryPrivateIPCount: 2,
+		}, {
+			Id:          "eni-id",
+			DeviceIndex: 1,
+			PrivateIPs: []ec2.PrivateIP{{
+				Address:   "10.0.1.10",
+				IsPrimary: true,
+			}, {
+				Address:   "10.0.1.20",
+				IsPrimary: false,
+			}},
+		}},
 	}
+	params := ec2.PrepareRunParams(options)
+	c.Assert(params, DeepEquals, map[string]string{
+		"Version": "2013-10-15",
+		"Action":  "RunInstances",
+	})
 	resp, err := s.ec2.RunInstances(&options)
 
 	req := testServer.WaitRequest()
@@ -136,6 +163,19 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.VolumeSize"], DeepEquals, []string{"10"})
 	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.Iops"], DeepEquals, []string{"1000"})
 	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.DeleteOnTermination"], DeepEquals, []string{"true"})
+	c.Assert(req.Form["NetworkInterface.0.DeviceIndex"], DeepEquals, []string{"0"})
+	c.Assert(req.Form["NetworkInterface.0.SubnetId"], DeepEquals, []string{"subnet-id"})
+	c.Assert(req.Form["NetworkInterface.0.Description"], DeepEquals, []string{"eth0"})
+	c.Assert(req.Form["NetworkInterface.0.SecurityGroupId.1"], DeepEquals, []string{"sg-1"})
+	c.Assert(req.Form["NetworkInterface.0.SecurityGroupId.2"], DeepEquals, []string{"sg-2"})
+	c.Assert(req.Form["NetworkInterface.0.DeleteOnTermination"], DeepEquals, []string{"true"})
+	c.Assert(req.Form["NetworkInterface.0.SecondaryPrivateIpAddressCount"], DeepEquals, []string{"2"})
+	c.Assert(req.Form["NetworkInterface.1.NetworkInterfaceId"], DeepEquals, []string{"eni-id"})
+	c.Assert(req.Form["NetworkInterface.1.DeviceIndex"], DeepEquals, []string{"1"})
+	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddresses.0.PrivateIpAddress"], DeepEquals, []string{"10.0.1.10"})
+	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddresses.0.Primary"], DeepEquals, []string{"true"})
+	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddresses.1.PrivateIpAddress"], DeepEquals, []string{"10.0.1.20"})
+	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddresses.1.Primary"], DeepEquals, []string{"false"})
 
 	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
@@ -153,6 +193,53 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(i0.AMILaunchIndex, Equals, 0)
 	c.Assert(i0.VirtType, Equals, "paravirtual")
 	c.Assert(i0.Hypervisor, Equals, "xen")
+	c.Assert(i0.SubnetId, Equals, "subnet-id")
+	c.Assert(i0.VPCId, Equals, "vpc-id")
+	c.Assert(i0.NetworkInterfaces, HasLen, 2)
+	c.Assert(i0.NetworkInterfaces, DeepEquals, []ec2.NetworkInterface{{
+		Id:              "eni-c6bb50ae",
+		SubnetId:        "subnet-id",
+		VPCId:           "vpc-id",
+		Description:     "eth0",
+		SourceDestCheck: true,
+		OwnerId:         "111122223333",
+		Status:          "in-use",
+		Groups: []ec2.SecurityGroup{
+			{Name: "vpc sg-1", Id: "sg-1"},
+			{Name: "vpc sg-2", Id: "sg-2"},
+		},
+		MACAddress:       "11:22:33:44:55:66",
+		PrivateIPAddress: "10.0.0.25",
+		PrivateIPs:       []ec2.PrivateIP{{Address: "10.0.0.25", IsPrimary: true}},
+		Attachment: ec2.NetworkInterfaceAttachment{
+			Id:                  "eni-attach-0326646a",
+			DeviceIndex:         0,
+			Status:              "attaching",
+			AttachTime:          "2011-12-20T08:29:31.000Z",
+			DeleteOnTermination: true,
+		},
+	}, {
+		Id:               "eni-id",
+		SubnetId:         "subnet-id",
+		VPCId:            "vpc-id",
+		SourceDestCheck:  true,
+		OwnerId:          "111122223333",
+		Status:           "in-use",
+		Groups:           []ec2.SecurityGroup{{Name: "vpc default", Id: "sg-id"}},
+		MACAddress:       "11:22:33:44:55:66",
+		PrivateIPAddress: "10.0.1.10",
+		PrivateIPs: []ec2.PrivateIP{
+			{Address: "10.0.1.10", IsPrimary: true},
+			{Address: "10.0.1.20", IsPrimary: false},
+		},
+		Attachment: ec2.NetworkInterfaceAttachment{
+			Id:                  "eni-attach-id",
+			DeviceIndex:         1,
+			Status:              "attaching",
+			AttachTime:          "2011-12-20T08:29:31.000Z",
+			DeleteOnTermination: false,
+		},
+	}})
 
 	i1 := resp.Instances[1]
 	c.Assert(i1.InstanceId, Equals, "i-2bc64242")
@@ -400,20 +487,30 @@ func (s *S) TestDescribeSnapshotsExample(c *C) {
 	c.Assert(s0.Tags[0].Value, Equals, "demo_db_14_backup")
 }
 
-func (s *S) TestCreateSecurityGroupExample(c *C) {
-	testServer.Response(200, nil, CreateSecurityGroupExample)
-
-	resp, err := s.ec2.CreateSecurityGroup("websrv", "Web Servers")
-
+func (s *S) checkCreateSGResponse(c *C, resp *ec2.CreateSecurityGroupResp, id, name, description, vpcId string) {
 	req := testServer.WaitRequest()
 	c.Assert(req.Form["Action"], DeepEquals, []string{"CreateSecurityGroup"})
-	c.Assert(req.Form["GroupName"], DeepEquals, []string{"websrv"})
-	c.Assert(req.Form["GroupDescription"], DeepEquals, []string{"Web Servers"})
+	c.Assert(req.Form["GroupName"], DeepEquals, []string{name})
+	c.Assert(req.Form["GroupDescription"], DeepEquals, []string{description})
+	if vpcId != "" {
+		c.Assert(req.Form["VpcId"], DeepEquals, []string{vpcId})
+	}
 
-	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
-	c.Assert(resp.Name, Equals, "websrv")
-	c.Assert(resp.Id, Equals, "sg-67ad940e")
+	c.Assert(resp.Name, Equals, name)
+	c.Assert(resp.Id, Equals, id)
+}
+
+func (s *S) TestCreateSecurityGroupExample(c *C) {
+	testServer.Response(200, nil, CreateSecurityGroupExample)
+	resp, err := s.ec2.CreateSecurityGroup("websrv", "Web Servers")
+	c.Assert(err, IsNil)
+	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "")
+
+	testServer.Response(200, nil, CreateSecurityGroupExample)
+	resp, err = s.ec2.CreateSecurityGroupVPC("vpc-id", "websrv", "Web Servers")
+	c.Assert(err, IsNil)
+	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "vpc-id")
 }
 
 func (s *S) TestDescribeSecurityGroupsExample(c *C) {
@@ -770,4 +867,34 @@ func (s *S) TestAvailabilityZonesExample2(c *C) {
 	c.Assert(z1.Region, Equals, "us-east-1")
 	c.Assert(z1.State, Equals, "unavailable")
 	c.Assert(z1.MessageSet, DeepEquals, []string{"us-east-1b is currently down for maintenance."})
+}
+
+func (s *S) TestDescribeAccountAttributesExamples(c *C) {
+	testServer.Response(200, nil, DescribeAccountAttributesExample)
+
+	resp, err := s.ec2.AccountAttributes("supported-platforms")
+	req := testServer.WaitRequest()
+
+	assertAttribute := func(name, value string) {
+		c.Assert(req.Form["Action"], DeepEquals, []string{"DescribeAccountAttributes"})
+		c.Assert(req.Form["AttributeName.1"], DeepEquals, []string{name})
+
+		c.Assert(err, IsNil)
+		c.Assert(resp.RequestId, Equals, "7a62c49f-347e-4fc4-9331-6e8eEXAMPLE")
+		c.Assert(resp.Attributes, HasLen, 1)
+		attr := resp.Attributes[0]
+		c.Check(attr.Name, Equals, name)
+		c.Check(attr.Values, DeepEquals, []string{value})
+	}
+	assertAttribute("supported-platforms", "VPC")
+
+	testServer.Response(200, nil, DescribeAccountAttributesExample2)
+	resp, err = s.ec2.AccountAttributes("default-vpc")
+	req = testServer.WaitRequest()
+	assertAttribute("default-vpc", "vpc-xxxxxxxx")
+
+	testServer.Response(200, nil, DescribeAccountAttributesExample3)
+	resp, err = s.ec2.AccountAttributes("default-vpc")
+	req = testServer.WaitRequest()
+	assertAttribute("default-vpc", "none")
 }

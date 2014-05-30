@@ -5,6 +5,7 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"time"
 
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
@@ -24,6 +25,12 @@ func (s *LocalServer) SetUp(c *C) {
 	srv, err := ec2test.NewServer()
 	c.Assert(err, IsNil)
 	c.Assert(srv, NotNil)
+
+	// Add default attributes.
+	srv.SetInitialAttributes(map[string][]string{
+		"supported-platforms": []string{"VPC", "EC2"},
+		"default-vpc":         []string{"vpc-xxxxxxx"},
+	})
 
 	s.srv = srv
 	s.region = aws.Region{EC2Endpoint: srv.URL()}
@@ -98,9 +105,51 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 	}
 	c.Check(masked(inst.IPAddress), Equals, "8.0.0.0")
 	c.Check(masked(inst.PrivateIPAddress), Equals, "127.0.0.0")
-	c.Check(inst.DNSName, Equals, id+".testing.invalid")
+	// DNSName is empty initially, to check it we need to refresh.
+	c.Check(inst.DNSName, Equals, "")
 	c.Check(inst.PrivateDNSName, Equals, id+".internal.invalid")
 
+	// Get the instance again to verify DNSName.
+	resp, err := s.ec2.Instances([]string{id}, nil)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Reservations, HasLen, 1)
+	c.Assert(resp.Reservations[0].Instances, HasLen, 1)
+	c.Check(resp.Reservations[0].Instances[0].DNSName, Equals, id+".testing.invalid")
+}
+
+// getDefaultVPCIdAndSubnets returns the default VPC id and a list of
+// its default subnets. If fails if there is no default VPC or at
+// least one subnet in it.
+func (s *ServerTests) getDefaultVPCIdAndSubnets(c *C) (string, []ec2.Subnet) {
+	resp1, err := s.ec2.AccountAttributes("default-vpc")
+	c.Assert(err, IsNil)
+	c.Assert(resp1.Attributes, HasLen, 1)
+	c.Assert(resp1.Attributes[0].Name, Equals, "default-vpc")
+	c.Assert(resp1.Attributes[0].Values, HasLen, 1)
+	c.Assert(resp1.Attributes[0].Values[0], Not(Equals), "")
+	defaultVPCId := resp1.Attributes[0].Values[0]
+	if defaultVPCId == "none" {
+		c.Fatalf("no default VPC for region %q", s.ec2.Region.Name)
+	}
+	filter := ec2.NewFilter()
+	filter.Add("defaultForAz", "true")
+	filter.Add("vpc-id", defaultVPCId)
+	resp2, err := s.ec2.Subnets(nil, filter)
+	c.Assert(err, IsNil)
+	defaultSubnets := resp2.Subnets
+	if len(defaultSubnets) < 1 {
+		c.Fatalf("no default subnets for VPC %q", defaultVPCId)
+	}
+
+	return defaultVPCId, defaultSubnets
+}
+
+func validIPForSubnet(c *C, subnet ec2.Subnet, startFrom byte) string {
+	ip, ipnet, err := net.ParseCIDR(subnet.CIDRBlock)
+	c.Assert(err, IsNil)
+	ip[len(ip)-1] = startFrom
+	c.Assert(ipnet.Contains(ip), Equals, true)
+	return ip.String()
 }
 
 func (s *LocalServerSuite) TestAvailabilityZones(c *C) {
@@ -149,7 +198,7 @@ func (s *LocalServerSuite) TestAvailabilityZones(c *C) {
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
-// It will only be activated if the -all flag is specified.
+// It will only be activated if the -amazon flag is specified.
 type AmazonServerSuite struct {
 	srv AmazonServer
 	ServerTests
@@ -173,25 +222,215 @@ type ServerTests struct {
 	ec2 *ec2.EC2
 }
 
-func terminateInstances(c *C, e *ec2.EC2, insts []*ec2.Instance) {
-	var ids []string
-	for _, inst := range insts {
-		if inst != nil {
-			ids = append(ids, inst.InstanceId)
+func (s *ServerTests) TestDescribeAccountAttributes(c *C) {
+	resp, err := s.ec2.AccountAttributes("supported-platforms", "default-vpc")
+	c.Assert(err, IsNil)
+	c.Assert(resp.Attributes, HasLen, 2)
+	for _, attr := range resp.Attributes {
+		switch attr.Name {
+		case "supported-platforms":
+			sort.Strings(attr.Values)
+			c.Assert(attr.Values, DeepEquals, []string{"EC2", "VPC"})
+		case "default-vpc":
+			c.Assert(attr.Values, HasLen, 1)
+			c.Assert(attr.Values[0], Not(Equals), "")
+		default:
+			c.Fatalf("unexpected account attribute %q: %v", attr.Name, attr)
 		}
 	}
+}
+
+func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
+	defaultVPCId, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+	subnet := defaultSubnets[0]
+
+	g0 := s.makeTestGroupVPC(c, defaultVPCId, "goamz-test0", "ec2test group 0")
+	g1 := s.makeTestGroupVPC(c, defaultVPCId, "goamz-test1", "ec2test group 1")
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
+
+	ip1 := validIPForSubnet(c, subnet, 5)
+	ip2 := validIPForSubnet(c, subnet, 6)
+	list, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
+			DeviceIndex:         0,
+			SubnetId:            subnet.Id,
+			Description:         "first nic",
+			SecurityGroupIds:    []string{g0.Id, g1.Id},
+			DeleteOnTermination: true,
+			PrivateIPs: []ec2.PrivateIP{
+				{Address: ip1, IsPrimary: true},
+				{Address: ip2, IsPrimary: false},
+			}}}})
+	c.Assert(err, IsNil)
+
+	inst := list.Instances[0]
+	c.Assert(inst, NotNil)
+	c.Assert(inst.NetworkInterfaces, HasLen, 1)
+
+	id := inst.InstanceId
+	defer s.ec2.TerminateInstances([]string{id})
+
+	c.Check(inst.VPCId, Equals, subnet.VPCId)
+	c.Check(inst.SubnetId, Equals, subnet.Id)
+	iface := inst.NetworkInterfaces[0]
+	c.Check(iface.Id, Matches, "eni-.+")
+	c.Check(iface.Attachment.DeviceIndex, Equals, 0)
+	c.Check(iface.Attachment.Id, Matches, "eni-attach-.+")
+	c.Check(iface.SubnetId, Equals, subnet.Id)
+	c.Check(iface.PrivateIPAddress, Equals, ip1)
+	c.Check(iface.Description, Equals, "first nic")
+	c.Check(iface.Groups, HasLen, 2)
+	for _, group := range iface.Groups {
+		if group.Id == g0.Id {
+			c.Check(group.Name, Equals, g0.Name)
+		} else if group.Id == g1.Id {
+			c.Check(group.Name, Equals, g1.Name)
+		}
+	}
+	for _, ip := range iface.PrivateIPs {
+		if ip.IsPrimary {
+			c.Check(ip.Address, Equals, ip1)
+		} else {
+			c.Check(ip.Address, Equals, ip2)
+		}
+	}
+}
+
+func (s *ServerTests) TestRunInstancesVPCReturnsErrorWithBothInstanceAndNICSubnetIds(c *C) {
+	_, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+	subnet := defaultSubnets[0]
+
+	_, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		SubnetId:     subnet.Id,
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
+			DeviceIndex:         0,
+			SubnetId:            subnet.Id,
+			Description:         "first nic",
+			DeleteOnTermination: true,
+		}},
+	})
+	c.Assert(err, NotNil)
+	c.Check(errorCode(err), Equals, "InvalidParameterCombination")
+}
+
+func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
+	defaultVPCId, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+
+	params := &ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+	}
+	if subnet != nil {
+		params.SubnetId = subnet.Id
+	} else {
+		subnet = &defaultSubnets[0]
+	}
+	list, err := s.ec2.RunInstances(params)
+	c.Assert(err, IsNil)
+
+	inst := list.Instances[0]
+	c.Assert(inst, NotNil)
+	c.Assert(inst.NetworkInterfaces, HasLen, 1)
+
+	id := inst.InstanceId
+	defer s.ec2.TerminateInstances([]string{id})
+
+	c.Check(inst.VPCId, Equals, defaultVPCId)
+	if inst.SubnetId != subnet.Id {
+		// Since we don't specify which AZ to use,
+		// the instance might launch in any one.
+		for _, sub := range defaultSubnets {
+			if inst.SubnetId == sub.Id {
+				subnet = &sub
+			}
+		}
+	}
+	_, ipnet, err := net.ParseCIDR(subnet.CIDRBlock)
+	c.Assert(err, IsNil)
+
+	c.Check(inst.SubnetId, Equals, subnet.Id)
+	iface := inst.NetworkInterfaces[0]
+	c.Assert(iface.Id, Matches, "eni-.+")
+	c.Assert(iface.SubnetId, Equals, subnet.Id)
+	c.Assert(iface.VPCId, Equals, subnet.VPCId)
+	if len(iface.PrivateIPs) > 0 {
+		// AWS doesn't always fill in the PrivateIPs slice.
+		expectIP := ec2.PrivateIP{
+			Address:   iface.PrivateIPAddress,
+			DNSName:   iface.PrivateDNSName,
+			IsPrimary: true,
+		}
+		c.Assert(iface.PrivateIPs, DeepEquals, []ec2.PrivateIP{expectIP})
+	}
+	c.Assert(ipnet.Contains(net.ParseIP(iface.PrivateIPAddress)), Equals, true)
+	c.Assert(iface.PrivateDNSName, Not(Equals), "")
+	c.Assert(iface.Attachment.Id, Matches, "eni-attach-.+")
+}
+
+func (s *ServerTests) TestRunInstancesVPCCreatesDefaultNICWithoutSubnetIdOrNICs(c *C) {
+	s.testCreateDefaultNIC(c, nil)
+}
+
+func (s *ServerTests) TestRunInstancesVPCCreatesDefaultNICWithSubnetIdNoNICs(c *C) {
+	_, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+	s.testCreateDefaultNIC(c, &defaultSubnets[0])
+}
+
+func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	_, err := e.TerminateInstances(ids)
-	c.Check(err, IsNil, Commentf("%d INSTANCES LEFT RUNNING!!!", len(ids)))
+	c.Assert(err, IsNil, Commentf("%v INSTANCES LEFT RUNNING!!!", ids))
+	// We need to wait until the instances are really off, because
+	// entities that depend on them won't be deleted (i.e. groups,
+	// NICs, subnets, etc.)
+	testAttempt := aws.AttemptStrategy{
+		Total: 10 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	f := ec2.NewFilter()
+	f.Add("instance-state-name", "terminated")
+	idsLeft := make(map[string]bool)
+	for _, id := range ids {
+		idsLeft[id] = true
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for %v to get terminated", ids)
+		resp, err := e.Instances(ids, f)
+		if err != nil {
+			c.Fatalf("not waiting for %v to terminate: %v", ids, err)
+		}
+		for _, r := range resp.Reservations {
+			for _, inst := range r.Instances {
+				delete(idsLeft, inst.InstanceId)
+			}
+		}
+		ids = []string{}
+		for id, _ := range idsLeft {
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			c.Logf("all instances terminated.")
+			return
+		}
+	}
+	c.Fatalf("%v INSTANCES LEFT RUNNING!!!", ids)
 }
 
 func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup {
+	return s.makeTestGroupVPC(c, "", name, descr)
+}
+
+func (s *ServerTests) makeTestGroupVPC(c *C, vpcId, name, descr string) ec2.SecurityGroup {
 	// Clean it up if a previous test left it around.
 	_, err := s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
-	if err != nil && err.(*ec2.Error).Code != "InvalidGroup.NotFound" {
+	if err != nil && errorCode(err) != "InvalidGroup.NotFound" {
 		c.Fatalf("delete security group: %v", err)
 	}
 
-	resp, err := s.ec2.CreateSecurityGroup(name, descr)
+	resp, err := s.ec2.CreateSecurityGroupVPC(vpcId, name, descr)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Name, Equals, name)
 	return resp.SecurityGroup
@@ -199,10 +438,8 @@ func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup 
 
 func (s *ServerTests) TestIPPerms(c *C) {
 	g0 := s.makeTestGroup(c, "goamz-test0", "ec2test group 0")
-	defer s.ec2.DeleteSecurityGroup(g0)
-
 	g1 := s.makeTestGroup(c, "goamz-test1", "ec2test group 1")
-	defer s.ec2.DeleteSecurityGroup(g1)
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
 
 	resp, err := s.ec2.SecurityGroups([]ec2.SecurityGroup{g0, g1}, nil)
 	c.Assert(err, IsNil)
@@ -221,7 +458,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		SourceIPs: []string{"z127.0.0.1/24"},
 	}})
 	c.Assert(err, NotNil)
-	c.Check(err.(*ec2.Error).Code, Equals, "InvalidPermission.Malformed")
+	c.Check(errorCode(err), Equals, "InvalidPermission.Malformed")
 
 	// Check that AuthorizeSecurityGroup adds the correct authorizations.
 	_, err = s.ec2.AuthorizeSecurityGroup(g0, []ec2.IPPerm{{
@@ -268,7 +505,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 	// Check that we can't delete g1 (because g0 is using it)
 	_, err = s.ec2.DeleteSecurityGroup(g1)
 	c.Assert(err, NotNil)
-	c.Check(err.(*ec2.Error).Code, Equals, "InvalidGroup.InUse")
+	c.Check(errorCode(err), Equals, "InvalidGroup.InUse")
 
 	_, err = s.ec2.RevokeSecurityGroup(g0, []ec2.IPPerm{{
 		Protocol:     "tcp",
@@ -339,7 +576,7 @@ func (s *ServerTests) TestDuplicateIPPerm(c *C) {
 	c.Assert(err, IsNil)
 
 	_, err = s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: name}, perms[0:2])
-	c.Assert(err, ErrorMatches, `.*\(InvalidPermission.Duplicate\)`)
+	c.Assert(errorCode(err), Equals, "InvalidPermission.Duplicate")
 }
 
 type filterSpec struct {
@@ -348,15 +585,31 @@ type filterSpec struct {
 }
 
 func (s *ServerTests) TestInstanceFiltering(c *C) {
-	groupResp, err := s.ec2.CreateSecurityGroup(sessionName("testgroup1"), "testgroup one description")
+	vpcResp, err := s.ec2.CreateVPC("10.4.0.0/16", "")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.VPC.Id
+	defer s.deleteVPCs(c, []string{vpcId})
+
+	subResp := s.createSubnet(c, vpcId, "10.4.1.0/24", "")
+	subId := subResp.Subnet.Id
+	defer s.deleteSubnets(c, []string{subId})
+
+	groupResp, err := s.ec2.CreateSecurityGroup(
+		sessionName("testgroup1"),
+		"testgroup one description",
+	)
 	c.Assert(err, IsNil)
 	group1 := groupResp.SecurityGroup
-	defer s.ec2.DeleteSecurityGroup(group1)
 
-	groupResp, err = s.ec2.CreateSecurityGroup(sessionName("testgroup2"), "testgroup two description")
+	groupResp, err = s.ec2.CreateSecurityGroupVPC(
+		vpcId,
+		sessionName("testgroup2"),
+		"testgroup two description vpc",
+	)
 	c.Assert(err, IsNil)
 	group2 := groupResp.SecurityGroup
-	defer s.ec2.DeleteSecurityGroup(group2)
+
+	defer s.deleteGroups(c, []ec2.SecurityGroup{group1, group2})
 
 	insts := make([]*ec2.Instance, 3)
 	inst, err := s.ec2.RunInstances(&ec2.RunInstances{
@@ -368,12 +621,12 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 	c.Assert(err, IsNil)
 	insts[0] = &inst.Instances[0]
 	insts[1] = &inst.Instances[1]
-	defer terminateInstances(c, s.ec2, insts)
 
 	imageId2 := "ami-e358958a" // Natty server, i386, EBS store
 	inst, err = s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:        imageId2,
 		InstanceType:   "t1.micro",
+		SubnetId:       subId,
 		SecurityGroups: []ec2.SecurityGroup{group2},
 	})
 	c.Assert(err, IsNil)
@@ -385,6 +638,8 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 		}
 		return
 	}
+
+	defer terminateInstances(c, s.ec2, ids(0, 1, 2))
 
 	tests := []struct {
 		about       string
@@ -467,6 +722,13 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 				{"image-id", []string{imageId2}},
 				{"group-name", []string{group1.Name}},
 			},
+		}, {
+			about: "VPC filters in combination",
+			filters: []filterSpec{
+				{"vpc-id", []string{vpcId}},
+				{"subnet-id", []string{subId}},
+			},
+			resultIds: ids(2),
 		},
 	}
 	for i, t := range tests {
@@ -501,6 +763,91 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 	}
 }
 
+func (s *AmazonServerSuite) TestRunInstancesVPC(c *C) {
+	vpcResp, err := s.ec2.CreateVPC("10.6.0.0/16", "")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.VPC.Id
+	defer s.deleteVPCs(c, []string{vpcId})
+
+	subResp := s.createSubnet(c, vpcId, "10.6.1.0/24", "")
+	subId := subResp.Subnet.Id
+	defer s.deleteSubnets(c, []string{subId})
+
+	groupResp, err := s.ec2.CreateSecurityGroupVPC(
+		vpcId,
+		sessionName("testgroup1 vpc"),
+		"testgroup description vpc",
+	)
+	c.Assert(err, IsNil)
+	group := groupResp.SecurityGroup
+
+	defer s.deleteGroups(c, []ec2.SecurityGroup{group})
+
+	// Run a single instance with a new network interface.
+	ips := []ec2.PrivateIP{
+		{Address: "10.6.1.10", IsPrimary: true},
+		{Address: "10.6.1.20", IsPrimary: false},
+	}
+	instResp, err := s.ec2.RunInstances(&ec2.RunInstances{
+		MinCount:     1,
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
+			DeviceIndex:         0,
+			SubnetId:            subId,
+			PrivateIPs:          ips,
+			SecurityGroupIds:    []string{group.Id},
+			DeleteOnTermination: true,
+		}},
+	})
+	c.Assert(err, IsNil)
+	inst := &instResp.Instances[0]
+
+	defer terminateInstances(c, s.ec2, []string{inst.InstanceId})
+
+	// Now list the network interfaces and find ours.
+	testAttempt := aws.AttemptStrategy{
+		Total: 5 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	f := ec2.NewFilter()
+	f.Add("subnet-id", subId)
+	var newNIC *ec2.NetworkInterface
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for NIC to become available")
+		listNICs, err := s.ec2.NetworkInterfaces(nil, f)
+		if err != nil {
+			c.Logf("retrying; NetworkInterfaces returned: %v", err)
+			continue
+		}
+		for _, iface := range listNICs.Interfaces {
+			c.Logf("found NIC %v", iface)
+			if iface.Attachment.InstanceId == inst.InstanceId {
+				c.Logf("instance %v new NIC appeared", inst.InstanceId)
+				newNIC = &iface
+				break
+			}
+		}
+		if newNIC != nil {
+			break
+		}
+	}
+	if newNIC == nil {
+		c.Fatalf("timeout while waiting for NIC to appear.")
+	}
+	c.Check(newNIC.Id, Matches, `^eni-[0-9a-f]+$`)
+	c.Check(newNIC.SubnetId, Equals, subId)
+	c.Check(newNIC.VPCId, Equals, vpcId)
+	c.Check(newNIC.Status, Matches, `^(attaching|in-use)$`)
+	c.Check(newNIC.PrivateIPAddress, Equals, ips[0].Address)
+	c.Check(newNIC.PrivateIPs, DeepEquals, ips)
+	c.Check(newNIC.Groups, HasLen, 1)
+	c.Check(newNIC.Groups[0].Id, Equals, group.Id)
+	c.Check(newNIC.Attachment.Status, Matches, `^(attaching|attached)$`)
+	c.Check(newNIC.Attachment.DeviceIndex, Equals, 0)
+	c.Check(newNIC.Attachment.DeleteOnTermination, Equals, true)
+}
+
 func idsOnly(gs []ec2.SecurityGroup) []ec2.SecurityGroup {
 	for i := range gs {
 		gs[i].Name = ""
@@ -516,14 +863,37 @@ func namesOnly(gs []ec2.SecurityGroup) []ec2.SecurityGroup {
 }
 
 func (s *ServerTests) TestGroupFiltering(c *C) {
-	g := make([]ec2.SecurityGroup, 4)
+	vpcResp, err := s.ec2.CreateVPC("10.5.0.0/16", "")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.VPC.Id
+	defer s.deleteVPCs(c, []string{vpcId})
+
+	subResp := s.createSubnet(c, vpcId, "10.5.1.0/24", "")
+	subId := subResp.Subnet.Id
+	defer s.deleteSubnets(c, []string{subId})
+
+	g := make([]ec2.SecurityGroup, 5)
 	for i := range g {
-		resp, err := s.ec2.CreateSecurityGroup(sessionName(fmt.Sprintf("testgroup%d", i)), fmt.Sprintf("testdescription%d", i))
+		var resp *ec2.CreateSecurityGroupResp
+		gid := sessionName(fmt.Sprintf("testgroup%d", i))
+		desc := fmt.Sprintf("testdescription%d", i)
+		if i == 0 {
+			// Create the first one as a VPC group.
+			gid += " vpc"
+			desc += " vpc"
+			resp, err = s.ec2.CreateSecurityGroupVPC(vpcId, gid, desc)
+		} else {
+			resp, err = s.ec2.CreateSecurityGroup(gid, desc)
+		}
 		c.Assert(err, IsNil)
 		g[i] = resp.SecurityGroup
 		c.Logf("group %d: %v", i, g[i])
-		defer s.ec2.DeleteSecurityGroup(g[i])
 	}
+	// Reorder the groups below, so that g[3] is first (some of the
+	// reset depend on it, so they can't be deleted before g[3]). A
+	// slight optimization for local live tests, so that we don't need
+	// to wait 5s each time deleteGroups runs.
+	defer s.deleteGroups(c, []ec2.SecurityGroup{g[3], g[0], g[1], g[2], g[4]})
 
 	perms := [][]ec2.IPPerm{
 		{{
@@ -536,17 +906,17 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			Protocol:     "tcp",
 			FromPort:     200,
 			ToPort:       300,
-			SourceGroups: []ec2.UserSecurityGroup{{Id: g[1].Id}},
+			SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
 		}},
 		{{
 			Protocol:     "udp",
 			FromPort:     200,
 			ToPort:       400,
-			SourceGroups: []ec2.UserSecurityGroup{{Id: g[1].Id}},
+			SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
 		}},
 	}
 	for i, ps := range perms {
-		_, err := s.ec2.AuthorizeSecurityGroup(g[i], ps)
+		_, err := s.ec2.AuthorizeSecurityGroup(g[i+1], ps)
 		c.Assert(err, IsNil)
 	}
 
@@ -576,7 +946,7 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 	tests := []groupTest{
 		{
 			about:      "check that SecurityGroups returns all groups",
-			results:    groups(0, 1, 2, 3),
+			results:    groups(0, 1, 2, 3, 4),
 			allowExtra: true,
 		}, {
 			about:   "check that specifying two group ids returns them",
@@ -584,8 +954,8 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			results: groups(0, 2),
 		}, {
 			about:   "check that specifying names only works",
-			groups:  namesOnly(groups(0, 2)),
-			results: groups(0, 2),
+			groups:  namesOnly(groups(1, 2)),
+			results: groups(1, 2),
 		}, {
 			about:  "check that specifying a non-existent group id gives an error",
 			groups: append(groups(0), ec2.SecurityGroup{Id: "sg-eeeeeeeee"}),
@@ -612,11 +982,12 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		},
 		filterCheck("description", "testdescription1", groups(1)),
 		filterCheck("group-name", g[2].Name, groups(2)),
-		filterCheck("ip-permission.cidr", "1.2.3.4/32", groups(0)),
-		filterCheck("ip-permission.group-name", g[1].Name, groups(1, 2)),
-		filterCheck("ip-permission.protocol", "udp", groups(2)),
-		filterCheck("ip-permission.from-port", "200", groups(1, 2)),
-		filterCheck("ip-permission.to-port", "200", groups(0)),
+		filterCheck("ip-permission.cidr", "1.2.3.4/32", groups(1)),
+		filterCheck("ip-permission.group-name", g[2].Name, groups(2, 3)),
+		filterCheck("ip-permission.protocol", "udp", groups(3)),
+		filterCheck("ip-permission.from-port", "200", groups(2, 3)),
+		filterCheck("ip-permission.to-port", "200", groups(1)),
+		filterCheck("vpc-id", vpcId, groups(0)),
 		// TODO owner-id
 	}
 	for i, t := range tests {
@@ -658,4 +1029,44 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			c.Check(rg.Name, Equals, g.Name, Commentf("group %d (%v)", j, g))
 		}
 	}
+}
+
+// deleteGroups ensures the given groups are deleted, by retrying
+// until a timeout or all groups cannot be found anymore.
+// This should be used to make sure tests leave no groups around.
+func (s *ServerTests) deleteGroups(c *C, groups []ec2.SecurityGroup) {
+	testAttempt := aws.AttemptStrategy{
+		Total: 2 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		deleted := 0
+		c.Logf("deleting groups %v", groups)
+		for _, group := range groups {
+			_, err := s.ec2.DeleteSecurityGroup(group)
+			if err == nil || errorCode(err) == "InvalidGroup.NotFound" {
+				c.Logf("group %v deleted", group)
+				deleted++
+				continue
+			}
+			if err != nil {
+				c.Logf("retrying; DeleteSecurityGroup returned: %v", err)
+			}
+		}
+		if deleted == len(groups) {
+			c.Logf("all groups deleted")
+			return
+		}
+	}
+	c.Fatalf("timeout while waiting %v groups to get deleted!", groups)
+}
+
+// errorCode returns the code of the given error, assuming it's not
+// nil and it's an instance of *ec2.Error. It returns an empty string
+// otherwise.
+func errorCode(err error) string {
+	if err, _ := err.(*ec2.Error); err != nil {
+		return err.Code
+	}
+	return ""
 }
