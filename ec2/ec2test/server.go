@@ -50,6 +50,7 @@ type Server struct {
 	instances            map[string]*Instance      // id -> instance
 	reservations         map[string]*reservation   // id -> reservation
 	groups               map[string]*securityGroup // id -> group
+	zones                []availabilityZone
 	maxId                counter
 	reqId                counter
 	reservationId        counter
@@ -74,6 +75,7 @@ type Instance struct {
 	imageId     string
 	reservation *reservation
 	instType    string
+	availZone   string
 	state       ec2.InstanceState
 }
 
@@ -196,13 +198,17 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"TerminateInstances":            (*Server).terminateInstances,
 	"DescribeInstances":             (*Server).describeInstances,
 	"CreateSecurityGroup":           (*Server).createSecurityGroup,
+	"DescribeAvailabilityZones":     (*Server).describeAvailabilityZones,
 	"DescribeSecurityGroups":        (*Server).describeSecurityGroups,
 	"DeleteSecurityGroup":           (*Server).deleteSecurityGroup,
 	"AuthorizeSecurityGroupIngress": (*Server).authorizeSecurityGroupIngress,
 	"RevokeSecurityGroupIngress":    (*Server).revokeSecurityGroupIngress,
 }
 
-const ownerId = "9876"
+const (
+	ownerId          = "9876"
+	defaultAvailZone = "us-east-1a"
+)
 
 // newAction allocates a new action and adds it to the
 // recorded list of server actions.
@@ -252,6 +258,13 @@ func NewServer() (*Server, error) {
 	}
 	srv.groups[g.id] = g
 
+	// Add a default availability zone.
+	var z availabilityZone
+	z.Name = defaultAvailZone
+	z.Region = "us-east-1"
+	z.State = "available"
+	srv.zones = []availabilityZone{z}
+
 	l, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
 		return nil, fmt.Errorf("cannot listen on localhost: %v", err)
@@ -277,6 +290,15 @@ func (srv *Server) Quit() {
 func (srv *Server) SetInitialInstanceState(state ec2.InstanceState) {
 	srv.mu.Lock()
 	srv.initialInstanceState = state
+	srv.mu.Unlock()
+}
+
+func (srv *Server) SetAvailabilityZones(zones []ec2.AvailabilityZoneInfo) {
+	srv.mu.Lock()
+	srv.zones = make([]availabilityZone, len(zones))
+	for i, z := range zones {
+		srv.zones[i] = availabilityZone{z}
+	}
 	srv.mu.Unlock()
 }
 
@@ -437,6 +459,7 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	// make sure that form fields are correct before creating the reservation.
 	instType := req.Form.Get("InstanceType")
 	imageId := req.Form.Get("ImageId")
+	availZone := req.Form.Get("AvailZone")
 
 	r := srv.newReservation(srv.formToGroups(req.Form))
 
@@ -446,7 +469,7 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	resp.OwnerId = ownerId
 
 	for i := 0; i < max; i++ {
-		inst := srv.newInstance(r, instType, imageId, srv.initialInstanceState)
+		inst := srv.newInstance(r, instType, imageId, availZone, srv.initialInstanceState)
 		inst.UserData = userData
 		resp.Instances = append(resp.Instances, inst.ec2instance())
 	}
@@ -484,17 +507,18 @@ func (srv *Server) NewInstances(n int, instType string, imageId string, state ec
 
 	ids := make([]string, n)
 	for i := 0; i < n; i++ {
-		inst := srv.newInstance(r, instType, imageId, state)
+		inst := srv.newInstance(r, instType, imageId, defaultAvailZone, state)
 		ids[i] = inst.id()
 	}
 	return ids
 }
 
-func (srv *Server) newInstance(r *reservation, instType string, imageId string, state ec2.InstanceState) *Instance {
+func (srv *Server) newInstance(r *reservation, instType string, imageId string, availZone string, state ec2.InstanceState) *Instance {
 	inst := &Instance{
 		seq:         srv.maxId.next(),
 		instType:    instType,
 		imageId:     imageId,
+		availZone:   availZone,
 		state:       state,
 		reservation: r,
 	}
@@ -568,6 +592,7 @@ func (inst *Instance) ec2instance() ec2.Instance {
 		IPAddress:        fmt.Sprintf("8.0.0.%d", inst.seq%256),
 		PrivateIPAddress: fmt.Sprintf("127.0.0.%d", inst.seq%256),
 		State:            inst.state,
+		AvailZone:        inst.availZone,
 		// TODO the rest
 	}
 }
@@ -576,6 +601,8 @@ func (inst *Instance) matchAttr(attr, value string) (ok bool, err error) {
 	switch attr {
 	case "architecture":
 		return value == "i386", nil
+	case "availability-zone":
+		return value == inst.availZone, nil
 	case "instance-id":
 		return inst.id() == value, nil
 	case "instance.group-id", "group-id":
@@ -976,6 +1003,51 @@ func (srv *Server) deleteSecurityGroup(w http.ResponseWriter, req *http.Request,
 		XMLName:   xml.Name{"", "DeleteSecurityGroupResponse"},
 		RequestId: reqId,
 	}
+}
+
+type availabilityZone struct {
+	ec2.AvailabilityZoneInfo
+}
+
+func (z *availabilityZone) matchAttr(attr, value string) (ok bool, err error) {
+	switch attr {
+	case "message":
+		for _, m := range z.MessageSet {
+			if m == value {
+				return true, nil
+			}
+		}
+		return false, nil
+	case "region-name":
+		return z.Region == value, nil
+	case "state":
+		switch value {
+		case "available", "impaired", "unavailable":
+			return z.State == value, nil
+		}
+		return false, fmt.Errorf("invalid state %q", value)
+	case "zone-name":
+		return z.Name == value, nil
+	}
+	return false, fmt.Errorf("unknown attribute %q", attr)
+}
+
+func (srv *Server) describeAvailabilityZones(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	f := newFilter(req.Form)
+	var resp ec2.AvailabilityZonesResp
+	resp.RequestId = reqId
+	for _, zone := range srv.zones {
+		ok, err := f.ok(&zone)
+		if ok {
+			resp.Zones = append(resp.Zones, zone.AvailabilityZoneInfo)
+		} else if err != nil {
+			fatalf(400, "InvalidParameterValue", "describe availability zones: %v", err)
+		}
+	}
+	return &resp
 }
 
 func (r *reservation) hasRunningMachine() bool {

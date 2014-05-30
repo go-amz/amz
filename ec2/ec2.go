@@ -893,3 +893,44 @@ func (ec2 *EC2) RebootInstances(ids ...string) (resp *SimpleResp, err error) {
 	}
 	return resp, nil
 }
+
+// ----------------------------------------------------------------------------
+// Availability zone management functions and types.
+// See http://goo.gl/ylxT4R for more details.
+
+// AvailabilityZonesResp represents a response to a DescribeAvailabilityZones
+// request in EC2.
+type AvailabilityZonesResp struct {
+	RequestId string                 `xml:"requestId"`
+	Zones     []AvailabilityZoneInfo `xml:"availabilityZoneInfo>item"`
+}
+
+// AvailabilityZoneInfo encapsulates details for an availability zone in EC2.
+type AvailabilityZoneInfo struct {
+	AvailabilityZone
+	State      string   `xml:"zoneState"`
+	MessageSet []string `xml:"messageSet>item"`
+}
+
+// AvailabilityZone represents an EC2 availability zone.
+type AvailabilityZone struct {
+	Name   string `xml:"zoneName"`
+	Region string `xml:"regionName"`
+}
+
+// AvailabilityZones returns details about availability zones in EC2.
+// The filter parameter is optional, and if provided will limit the
+// availability zones returned to those matching the given filtering
+// rules.
+//
+// See http://goo.gl/ylxT4R for more details.
+func (ec2 *EC2) AvailabilityZones(filter *Filter) (resp *AvailabilityZonesResp, err error) {
+	params := makeParams("DescribeAvailabilityZones")
+	filter.addParams(params)
+	resp = &AvailabilityZonesResp{}
+	err = ec2.query(params, resp)
+	if err != nil {
+		return nil, err
+	}
+	return
+}

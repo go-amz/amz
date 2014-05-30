@@ -103,6 +103,51 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 
 }
 
+func (s *LocalServerSuite) TestAvailabilityZones(c *C) {
+	s.srv.srv.SetAvailabilityZones([]ec2.AvailabilityZoneInfo{{
+		AvailabilityZone: ec2.AvailabilityZone{
+			Name:   "us-east-1a",
+			Region: "us-east-1",
+		},
+		State: "available",
+	}, {
+		AvailabilityZone: ec2.AvailabilityZone{
+			Name:   "us-east-1b",
+			Region: "us-east-1",
+		},
+		State: "impaired",
+	}, {
+		AvailabilityZone: ec2.AvailabilityZone{
+			Name:   "us-west-1a",
+			Region: "us-west-1",
+		},
+		State: "available",
+	}, {
+		AvailabilityZone: ec2.AvailabilityZone{
+			Name:   "us-west-1b",
+			Region: "us-west-1",
+		},
+		State:      "unavailable",
+		MessageSet: []string{"down for maintenance"},
+	}})
+
+	resp, err := s.ec2.AvailabilityZones(nil)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Zones, HasLen, 4)
+	c.Assert(resp.Zones[0].Name, Equals, "us-east-1a")
+	c.Assert(resp.Zones[1].Name, Equals, "us-east-1b")
+	c.Assert(resp.Zones[2].Name, Equals, "us-west-1a")
+	c.Assert(resp.Zones[3].Name, Equals, "us-west-1b")
+
+	filter := ec2.NewFilter()
+	filter.Add("region-name", "us-east-1")
+	resp, err = s.ec2.AvailabilityZones(filter)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Zones, HasLen, 2)
+	c.Assert(resp.Zones[0].Name, Equals, "us-east-1a")
+	c.Assert(resp.Zones[1].Name, Equals, "us-east-1b")
+}
+
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
 // It will only be activated if the -all flag is specified.
 type AmazonServerSuite struct {
