@@ -877,7 +877,7 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	// make sure that form fields are correct before creating the reservation.
 	instType := req.Form.Get("InstanceType")
 	imageId := req.Form.Get("ImageId")
-	availZone := req.Form.Get("AvailZone")
+	availZone := req.Form.Get("Placement.AvailabilityZone")
 
 	r := srv.newReservation(srv.formToGroups(req.Form))
 
