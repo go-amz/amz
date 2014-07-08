@@ -133,6 +133,19 @@ var SAEast = Region{
 	"https://iam.amazonaws.com",
 }
 
+var CNNorth = Region{
+	"cn-north-1",
+	"https://ec2.cn-north-1.amazonaws.com.cn",
+	"https://s3.cn-north-1.amazonaws.com.cn",
+	"",
+	true,
+	true,
+	"https://sdb.cn-north-1.amazonaws.com.cn",
+	"https://sns.cn-north-1.amazonaws.com.cn",
+	"https://sqs.cn-north-1.amazonaws.com.cn",
+	"https://iam.amazonaws.com.cn",
+}
+
 var Regions = map[string]Region{
 	APNortheast.Name:  APNortheast,
 	APSoutheast.Name:  APSoutheast,
@@ -142,6 +155,7 @@ var Regions = map[string]Region{
 	USWest.Name:       USWest,
 	USWest2.Name:      USWest2,
 	SAEast.Name:       SAEast,
+	CNNorth.Name:      CNNorth,
 }
 
 type Auth struct {
