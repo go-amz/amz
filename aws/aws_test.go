@@ -2,7 +2,7 @@ package aws_test
 
 import (
 	"launchpad.net/goamz/aws"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"os"
 	"strings"
 	"testing"

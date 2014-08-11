@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -27,7 +28,12 @@ type Response struct {
 }
 
 func NewHTTPServer() *HTTPServer {
-	return &HTTPServer{URL: "http://localhost:4444", Timeout: 5 * time.Second}
+	s := &HTTPServer{
+		URL:     "http://localhost:0",
+		Timeout: 5 * time.Second,
+	}
+
+	return s
 }
 
 type ResponseFunc func(path string) Response
@@ -43,10 +49,16 @@ func (s *HTTPServer) Start() {
 	if err != nil {
 		panic(err)
 	}
+
 	s.listener, err = net.Listen("tcp", u.Host)
 	if err != nil {
 		panic(err)
 	}
+
+	// The OS has found an open port; reset the URL to reflect the
+	// actual port.
+	s.URL = fmt.Sprintf("http://%s", s.listener.Addr().String())
+	log.Printf("Listening on %v\n", s.URL)
 	go http.Serve(s.listener, s)
 
 	s.Response(203, nil, "")
@@ -56,6 +68,7 @@ func (s *HTTPServer) Start() {
 		if err == nil && resp.StatusCode == 203 {
 			break
 		}
+		log.Printf("Waiting on addr: %s\n", s.URL)
 		time.Sleep(1e8)
 	}
 	s.WaitRequest() // Consume dummy request.
@@ -70,6 +83,7 @@ func (s *HTTPServer) Stop() {
 		panic(err)
 	}
 	s.listener = nil
+	s.started = false
 }
 
 // Flush discards all pending requests and responses.

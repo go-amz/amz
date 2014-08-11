@@ -4,7 +4,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/iam"
 	"launchpad.net/goamz/iam/iamtest"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 )
 
 // LocalServer represents a local ec2test fake server.
@@ -20,7 +20,7 @@ func (s *LocalServer) SetUp(c *C) {
 	c.Assert(srv, NotNil)
 
 	s.srv = srv
-	s.region = aws.Region{IAMEndpoint: srv.URL()}
+	s.region = aws.Region{IAMEndpoint: srv.URL(), Sign: aws.SignV2}
 }
 
 // LocalServerSuite defines tests that will run

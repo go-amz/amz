@@ -11,7 +11,7 @@ package ec2_test
 import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"time"
 )
 

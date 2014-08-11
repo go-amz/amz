@@ -4,7 +4,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/s3"
 	"launchpad.net/goamz/s3/s3test"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 )
 
 type LocalServer struct {
@@ -24,6 +24,7 @@ func (s *LocalServer) SetUp(c *C) {
 		Name:                 "faux-region-1",
 		S3Endpoint:           srv.URL(),
 		S3LocationConstraint: true, // s3test server requires a LocationConstraint
+		Sign:                 aws.SignV2,
 	}
 }
 

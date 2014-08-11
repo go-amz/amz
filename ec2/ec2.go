@@ -21,6 +21,7 @@ import (
 	"strconv"
 	"time"
 
+	"encoding/base64"
 	"launchpad.net/goamz/aws"
 )
 
@@ -126,21 +127,25 @@ type xmlErrors struct {
 
 var timeNow = time.Now
 
+// resp = response structure that will get inflated by XML unmarshaling.
 func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
-	params["Timestamp"] = timeNow().In(time.UTC).Format(time.RFC3339)
-	endpoint, err := url.Parse(ec2.Region.EC2Endpoint)
+
+	req, err := http.NewRequest("GET", ec2.Region.EC2Endpoint, nil)
 	if err != nil {
 		return err
 	}
-	if endpoint.Path == "" {
-		endpoint.Path = "/"
+
+	// Add the params passed in to the query string
+	query := req.URL.Query()
+	for varName, varVal := range params {
+		query.Add(varName, varVal)
 	}
-	sign(ec2.Auth, "GET", endpoint.Path, params, endpoint.Host)
-	endpoint.RawQuery = multimap(params).Encode()
-	if debug {
-		log.Printf("get { %v } -> {\n", endpoint.String())
-	}
-	r, err := http.Get(endpoint.String())
+	query.Add("Timestamp", timeNow().In(time.UTC).Format(time.RFC3339))
+	req.URL.RawQuery = query.Encode()
+
+	ec2.Region.Sign(req, ec2.Auth)
+
+	r, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -154,8 +159,7 @@ func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
 	if r.StatusCode != 200 {
 		return buildError(r)
 	}
-	err = xml.NewDecoder(r.Body).Decode(resp)
-	return err
+	return xml.NewDecoder(r.Body).Decode(resp)
 }
 
 func multimap(p map[string]string) url.Values {
@@ -349,8 +353,8 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		params["RamdiskId"] = options.RamdiskId
 	}
 	if options.UserData != nil {
-		userData := make([]byte, b64.EncodedLen(len(options.UserData)))
-		b64.Encode(userData, options.UserData)
+		userData := make([]byte, base64.StdEncoding.EncodedLen(len(options.UserData)))
+		base64.StdEncoding.Encode(userData, options.UserData)
 		params["UserData"] = string(userData)
 	}
 	if options.AvailZone != "" {

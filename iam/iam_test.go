@@ -4,7 +4,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/iam"
 	"launchpad.net/goamz/testutil"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"strings"
 	"testing"
 )
@@ -24,7 +24,7 @@ var testServer = testutil.NewHTTPServer()
 func (s *S) SetUpSuite(c *C) {
 	testServer.Start()
 	auth := aws.Auth{"abc", "123"}
-	s.iam = iam.New(auth, aws.Region{IAMEndpoint: testServer.URL})
+	s.iam = iam.New(auth, aws.Region{IAMEndpoint: testServer.URL, Sign: aws.SignV2})
 }
 
 func (s *S) TearDownSuite(c *C) {
