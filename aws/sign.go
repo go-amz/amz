@@ -28,6 +28,8 @@ const (
 	ISO8601BasicFormatShort = "20060102"
 )
 
+// SignV4 signs an HTTP request utilizing version 4 of the AWS
+// signature, and the given credentials.
 func SignV2(req *http.Request, auth Auth) (err error) {
 
 	queryVals := req.URL.Query()
@@ -60,12 +62,16 @@ func SignV2(req *http.Request, auth Auth) (err error) {
 	return nil
 }
 
+// SignV4Factory returns a version 4 Signer which will utilize the
+// given region name.
 func SignV4Factory(regionName string) Signer {
 	return func(req *http.Request, auth Auth) error {
 		return SignV4(req, auth, regionName)
 	}
 }
 
+// SignV4 signs an HTTP request utilizing version 4 of the AWS
+// signature, and the given credentials.
 func SignV4(req *http.Request, auth Auth, regionName string) (err error) {
 
 	var reqTime time.Time
