@@ -185,6 +185,26 @@ func (s *SigningSuite) TestV2SignatureExample1(c *C) {
 	c.Assert(req.URL.Query().Get("Signature"), Equals, expected)
 }
 
+// Tests example from:
+// http://docs.aws.amazon.com/general/latest/gr/signature-version-2.html
+// Specifically, good for testing case when URL does not contain a /
+func (s *SigningSuite) TestV2SignatureTutorialExample(c *C) {
+
+	req, err := http.NewRequest("GET", "https://elasticmapreduce.amazonaws.com/", nil)
+	c.Assert(err, IsNil)
+
+	query := req.URL.Query()
+	query.Add("Timestamp", "2011-10-03T15:19:30")
+	query.Add("Version", "2009-03-31")
+	query.Add("Action", "DescribeJobFlows")
+	req.URL.RawQuery = query.Encode()
+
+	testAuth := Auth{"AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
+	err = SignV2(req, testAuth)
+	c.Assert(err, IsNil)
+	c.Assert(req.URL.Query().Get("Signature"), Equals, "i91nKc4PWAt0JJIdXwz9HxZCJDdiy6cf/Mj6vPxyYIs=")
+}
+
 // https://bugs.launchpad.net/goamz/+bug/1022749
 func (s *SigningSuite) TestSignatureWithEndpointPath(c *C) {
 

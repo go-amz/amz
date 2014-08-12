@@ -28,7 +28,7 @@ const (
 	ISO8601BasicFormatShort = "20060102"
 )
 
-// SignV4 signs an HTTP request utilizing version 4 of the AWS
+// SignV2 signs an HTTP request utilizing version 2 of the AWS
 // signature, and the given credentials.
 func SignV2(req *http.Request, auth Auth) (err error) {
 
@@ -42,11 +42,17 @@ func SignV2(req *http.Request, auth Auth) (err error) {
 		return err
 	}
 
+	// The algorithm states that if the path is empty, to just use a "/".
+	path := req.URL.Path
+	if path == "" {
+		path = "/"
+	}
+
 	payload := new(bytes.Buffer)
 	if err := errorCollector(
 		fprintfWrapper(payload, "%s\n", requestMethodVerb(req.Method)),
 		fprintfWrapper(payload, "%s\n", req.Host),
-		fprintfWrapper(payload, "%s\n", req.URL.Path),
+		fprintfWrapper(payload, "%s\n", path),
 		fprintfWrapper(payload, "%s", queryStr),
 	); err != nil {
 		return err
@@ -59,6 +65,7 @@ func SignV2(req *http.Request, auth Auth) (err error) {
 
 	queryVals.Set("Signature", string(signature))
 	req.URL.RawQuery = queryVals.Encode()
+
 	return nil
 }
 
