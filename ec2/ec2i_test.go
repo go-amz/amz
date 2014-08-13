@@ -7,7 +7,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/testutil"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 )
 
 // AmazonServer represents an Amazon EC2 server.

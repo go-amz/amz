@@ -27,6 +27,7 @@ type Region struct {
 	SNSEndpoint          string
 	SQSEndpoint          string
 	IAMEndpoint          string
+	Sign                 Signer // Method which will be used to sign requests.
 }
 
 var USEast = Region{
@@ -40,6 +41,7 @@ var USEast = Region{
 	"https://sns.us-east-1.amazonaws.com",
 	"https://sqs.us-east-1.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var USWest = Region{
@@ -53,6 +55,7 @@ var USWest = Region{
 	"https://sns.us-west-1.amazonaws.com",
 	"https://sqs.us-west-1.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var USWest2 = Region{
@@ -66,6 +69,7 @@ var USWest2 = Region{
 	"https://sns.us-west-2.amazonaws.com",
 	"https://sqs.us-west-2.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var EUWest = Region{
@@ -79,6 +83,7 @@ var EUWest = Region{
 	"https://sns.eu-west-1.amazonaws.com",
 	"https://sqs.eu-west-1.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var APSoutheast = Region{
@@ -92,6 +97,7 @@ var APSoutheast = Region{
 	"https://sns.ap-southeast-1.amazonaws.com",
 	"https://sqs.ap-southeast-1.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var APSoutheast2 = Region{
@@ -105,6 +111,7 @@ var APSoutheast2 = Region{
 	"https://sns.ap-southeast-2.amazonaws.com",
 	"https://sqs.ap-southeast-2.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var APNortheast = Region{
@@ -118,6 +125,7 @@ var APNortheast = Region{
 	"https://sns.ap-northeast-1.amazonaws.com",
 	"https://sqs.ap-northeast-1.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var SAEast = Region{
@@ -131,6 +139,7 @@ var SAEast = Region{
 	"https://sns.sa-east-1.amazonaws.com",
 	"https://sqs.sa-east-1.amazonaws.com",
 	"https://iam.amazonaws.com",
+	SignV2,
 }
 
 var CNNorth = Region{
@@ -144,6 +153,7 @@ var CNNorth = Region{
 	"https://sns.cn-north-1.amazonaws.com.cn",
 	"https://sqs.cn-north-1.amazonaws.com.cn",
 	"https://iam.amazonaws.com.cn",
+	SignV4Factory("cn-north-1"),
 }
 
 var Regions = map[string]Region{

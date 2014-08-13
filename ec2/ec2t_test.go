@@ -11,7 +11,7 @@ import (
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/ec2/ec2test"
 	"launchpad.net/goamz/testutil"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 )
 
 // LocalServer represents a local ec2test fake server.
@@ -33,7 +33,7 @@ func (s *LocalServer) SetUp(c *C) {
 	})
 
 	s.srv = srv
-	s.region = aws.Region{EC2Endpoint: srv.URL()}
+	s.region = aws.Region{EC2Endpoint: srv.URL(), Sign: aws.SignV2}
 }
 
 // LocalServerSuite defines tests that will run

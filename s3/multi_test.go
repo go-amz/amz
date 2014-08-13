@@ -5,7 +5,7 @@ import (
 	"io"
 	"io/ioutil"
 	"launchpad.net/goamz/s3"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"strings"
 )
 

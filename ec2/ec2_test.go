@@ -6,7 +6,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/ec2"
 	"launchpad.net/goamz/testutil"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 )
 
 func Test(t *testing.T) {
@@ -24,7 +24,7 @@ var testServer = testutil.NewHTTPServer()
 func (s *S) SetUpSuite(c *C) {
 	testServer.Start()
 	auth := aws.Auth{"abc", "123"}
-	s.ec2 = ec2.New(auth, aws.Region{EC2Endpoint: testServer.URL})
+	s.ec2 = ec2.New(auth, aws.Region{EC2Endpoint: testServer.URL, Sign: aws.SignV2})
 }
 
 func (s *S) TearDownSuite(c *C) {
@@ -789,22 +789,6 @@ func (s *S) TestRebootInstances(c *C) {
 
 	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
-}
-
-func (s *S) TestSignatureWithEndpointPath(c *C) {
-	ec2.FakeTime(true)
-	defer ec2.FakeTime(false)
-
-	testServer.Response(200, nil, RebootInstancesExample)
-
-	// https://bugs.launchpad.net/goamz/+bug/1022749
-	ec2 := ec2.New(s.ec2.Auth, aws.Region{EC2Endpoint: testServer.URL + "/services/Cloud"})
-
-	_, err := ec2.RebootInstances("i-10a64379")
-	c.Assert(err, IsNil)
-
-	req := testServer.WaitRequest()
-	c.Assert(req.Form["Signature"], DeepEquals, []string{"gdG/vEm+c6ehhhfkrJy3+wuVzw/rzKR42TYelMwti7M="})
 }
 
 func (s *S) TestAvailabilityZonesExample1(c *C) {

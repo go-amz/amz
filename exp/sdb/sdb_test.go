@@ -4,7 +4,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/exp/sdb"
 	"launchpad.net/goamz/testutil"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"testing"
 )
 
@@ -23,7 +23,7 @@ var testServer = testutil.NewHTTPServer()
 func (s *S) SetUpSuite(c *C) {
 	testServer.Start()
 	auth := aws.Auth{"abc", "123"}
-	s.sdb = sdb.New(auth, aws.Region{SDBEndpoint: testServer.URL})
+	s.sdb = sdb.New(auth, aws.Region{SDBEndpoint: testServer.URL, Sign: aws.SignV2})
 }
 
 func (s *S) TearDownSuite(c *C) {

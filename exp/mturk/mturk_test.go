@@ -4,7 +4,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/exp/mturk"
 	"launchpad.net/goamz/testutil"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"net/url"
 	"testing"
 )

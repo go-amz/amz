@@ -9,7 +9,7 @@ import (
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/s3"
 	"launchpad.net/goamz/testutil"
-	. "launchpad.net/gocheck"
+	. "gopkg.in/check.v1"
 	"time"
 )
 
@@ -28,7 +28,7 @@ var testServer = testutil.NewHTTPServer()
 func (s *S) SetUpSuite(c *C) {
 	testServer.Start()
 	auth := aws.Auth{"abc", "123"}
-	s.s3 = s3.New(auth, aws.Region{Name: "faux-region-1", S3Endpoint: testServer.URL})
+	s.s3 = s3.New(auth, aws.Region{Name: "faux-region-1", S3Endpoint: testServer.URL, Sign: aws.SignV2})
 }
 
 func (s *S) TearDownSuite(c *C) {
