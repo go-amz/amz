@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"launchpad.net/goamz/ec2"
+	"gopkg.in/amz.v1/ec2"
 )
 
 var b64 = base64.StdEncoding

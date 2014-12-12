@@ -4,10 +4,11 @@ import (
 	"crypto/hmac"
 	"crypto/sha1"
 	"encoding/base64"
-	"launchpad.net/goamz/aws"
 	"log"
 	"sort"
 	"strings"
+
+	"gopkg.in/amz.v1/aws"
 )
 
 var b64 = base64.StdEncoding

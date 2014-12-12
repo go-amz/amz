@@ -1,11 +1,13 @@
 package sdb_test
 
 import (
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/exp/sdb"
-	"launchpad.net/goamz/testutil"
-	. "gopkg.in/check.v1"
 	"testing"
+
+	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/exp/sdb"
+	"gopkg.in/amz.v1/testutil"
 )
 
 func Test(t *testing.T) {

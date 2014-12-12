@@ -1,12 +1,14 @@
 package mturk_test
 
 import (
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/exp/mturk"
-	"launchpad.net/goamz/testutil"
-	. "gopkg.in/check.v1"
 	"net/url"
 	"testing"
+
+	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/exp/mturk"
+	"gopkg.in/amz.v1/testutil"
 )
 
 func Test(t *testing.T) {

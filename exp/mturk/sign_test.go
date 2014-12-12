@@ -1,9 +1,10 @@
 package mturk_test
 
 import (
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/exp/mturk"
 	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/exp/mturk"
 )
 
 // Mechanical Turk REST authentication docs: http://goo.gl/wrzfn

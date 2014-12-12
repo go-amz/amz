@@ -22,13 +22,14 @@ package sdb
 
 import (
 	"encoding/xml"
-	"launchpad.net/goamz/aws"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"time"
+
+	"gopkg.in/amz.v1/aws"
 )
 
 const debug = false

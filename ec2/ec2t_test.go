@@ -7,11 +7,12 @@ import (
 	"sort"
 	"time"
 
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/ec2"
-	"launchpad.net/goamz/ec2/ec2test"
-	"launchpad.net/goamz/testutil"
 	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/ec2"
+	"gopkg.in/amz.v1/ec2/ec2test"
+	"gopkg.in/amz.v1/testutil"
 )
 
 // LocalServer represents a local ec2test fake server.

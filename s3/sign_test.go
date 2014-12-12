@@ -1,9 +1,10 @@
 package s3_test
 
 import (
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/s3"
 	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/s3"
 )
 
 // S3 ReST authentication docs: http://goo.gl/G1LrK

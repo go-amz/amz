@@ -5,12 +5,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"testing"
-
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/s3"
-	"launchpad.net/goamz/testutil"
-	. "gopkg.in/check.v1"
 	"time"
+
+	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/s3"
+	"gopkg.in/amz.v1/testutil"
 )
 
 func Test(t *testing.T) {

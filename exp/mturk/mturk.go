@@ -17,12 +17,13 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"launchpad.net/goamz/aws"
 	"net/http"
 	//"net/http/httputil"
 	"net/url"
 	"strconv"
 	"time"
+
+	"gopkg.in/amz.v1/aws"
 )
 
 type MTurk struct {

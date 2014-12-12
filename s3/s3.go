@@ -14,7 +14,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"launchpad.net/goamz/aws"
 	"log"
 	"net"
 	"net/http"
@@ -23,6 +22,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/amz.v1/aws"
 )
 
 const debug = false

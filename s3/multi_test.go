@@ -4,9 +4,11 @@ import (
 	"encoding/xml"
 	"io"
 	"io/ioutil"
-	"launchpad.net/goamz/s3"
-	. "gopkg.in/check.v1"
 	"strings"
+
+	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/s3"
 )
 
 func (s *S) TestInitMulti(c *C) {

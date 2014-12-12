@@ -10,6 +10,7 @@ package ec2
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/xml"
 	"fmt"
@@ -21,8 +22,7 @@ import (
 	"strconv"
 	"time"
 
-	"encoding/base64"
-	"launchpad.net/goamz/aws"
+	"gopkg.in/amz.v1/aws"
 )
 
 const (

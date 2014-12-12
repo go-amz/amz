@@ -1,12 +1,14 @@
 package iam_test
 
 import (
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/iam"
-	"launchpad.net/goamz/testutil"
-	. "gopkg.in/check.v1"
 	"strings"
 	"testing"
+
+	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/iam"
+	"gopkg.in/amz.v1/testutil"
 )
 
 func Test(t *testing.T) {

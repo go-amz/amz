@@ -1,7 +1,7 @@
 package s3
 
 import (
-	"launchpad.net/goamz/aws"
+	"gopkg.in/amz.v1/aws"
 )
 
 var originalStrategy = attempts

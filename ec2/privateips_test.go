@@ -12,9 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"launchpad.net/goamz/aws"
-	"launchpad.net/goamz/ec2"
 	. "gopkg.in/check.v1"
+
+	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v1/ec2"
 )
 
 // Private IP tests with example responses
