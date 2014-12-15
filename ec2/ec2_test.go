@@ -129,15 +129,11 @@ func (s *S) TestRunInstancesExample(c *C) {
 			}},
 		}},
 	}
-	params := ec2.PrepareRunParams(options)
-	c.Assert(params, DeepEquals, map[string]string{
-		"Version": "2013-10-15",
-		"Action":  "RunInstances",
-	})
 	resp, err := s.ec2.RunInstances(&options)
 
 	req := testServer.WaitRequest()
 	c.Assert(req.Form["Action"], DeepEquals, []string{"RunInstances"})
+	c.Assert(req.Form["Version"], DeepEquals, []string{"2014-10-01"})
 	c.Assert(req.Form["ImageId"], DeepEquals, []string{"image-id"})
 	c.Assert(req.Form["MinCount"], DeepEquals, []string{"1"})
 	c.Assert(req.Form["MaxCount"], DeepEquals, []string{"1"})

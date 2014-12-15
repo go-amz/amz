@@ -28,12 +28,17 @@ import (
 const (
 	debug = false
 
-	// legacyAPIVersion is the AWS API version used for all but
-	// VPC-related requests.
+	// legacyAPIVersion is the AWS API version used for most
+	// non-VPC-related requests.
 	legacyAPIVersion = "2011-12-15"
 
 	// AWS API version used for VPC-related calls.
 	vpcAPIVersion = "2013-10-15"
+
+	// runInstancesAPIVersion is the AWS API version used for calls
+	// to RunInstances. This version supports creating instances with
+	// SSD and provisioned IOPS volumes.
+	runInstancesAPIVersion = "2014-10-01"
 )
 
 // The EC2 type encapsulates operations with a specific EC2 region.
@@ -309,7 +314,7 @@ type Instance struct {
 //
 // See http://goo.gl/Mcm3b for more details.
 func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err error) {
-	params := prepareRunParams(*options)
+	params := makeParamsWithVersion("RunInstances", runInstancesAPIVersion)
 	params["ImageId"] = options.ImageId
 	params["InstanceType"] = options.InstanceType
 	var min, max int
@@ -385,16 +390,6 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		return nil, err
 	}
 	return
-}
-
-func prepareRunParams(options RunInstances) map[string]string {
-	if options.SubnetId != "" || len(options.NetworkInterfaces) > 0 {
-		// When either SubnetId or NetworkInterfaces are specified, we
-		// need to use the API version with complete VPC support.
-		return makeParamsVPC("RunInstances")
-	} else {
-		return makeParams("RunInstances")
-	}
 }
 
 func prepareBlockDevices(params map[string]string, blockDevs []BlockDeviceMapping) {
