@@ -15,5 +15,3 @@ func FakeTime(fakeIt bool) {
 		timeNow = time.Now
 	}
 }
-
-var PrepareRunParams = prepareRunParams
