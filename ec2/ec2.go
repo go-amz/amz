@@ -20,20 +20,19 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/amz.v1/aws"
 )
 
 const (
+	// debug, when set to true causes AWS requests and responses to be
+	// printed in full.
 	debug = false
 
-	// legacyAPIVersion is the AWS API version used for all but
-	// VPC-related requests.
-	legacyAPIVersion = "2011-12-15"
-
-	// AWS API version used for VPC-related calls.
-	vpcAPIVersion = "2013-10-15"
+	// apiVersion is the AWS API version used for all EC2 requests.
+	apiVersion = "2014-10-01"
 )
 
 // The EC2 type encapsulates operations with a specific EC2 region.
@@ -152,14 +151,26 @@ func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
 	defer r.Body.Close()
 
 	if debug {
+		dumpRequest(req)
 		dump, _ := httputil.DumpResponse(r, true)
-		log.Printf("response:\n")
-		log.Printf("%v\n}\n", string(dump))
+		log.Printf("response:\n%v\n}\n", string(dump))
 	}
 	if r.StatusCode != 200 {
 		return buildError(r)
 	}
 	return xml.NewDecoder(r.Body).Decode(resp)
+}
+
+// dumpRequest pretty-prints the AWS request the way the API docs
+// formats it.
+func dumpRequest(req *http.Request) {
+	queryParts := strings.Split(req.URL.RawQuery, "&")
+	path := req.URL.Path
+	if path == "" {
+		path = "/"
+	}
+	reqURL := path + "?" + queryParts[0] + "\n\t&" + strings.Join(queryParts[1:], "\n\t&")
+	log.Printf("request: %s %s %s\n}\n", req.Method, reqURL, req.Proto)
 }
 
 func multimap(p map[string]string) url.Values {
@@ -186,17 +197,9 @@ func buildError(r *http.Response) error {
 }
 
 func makeParams(action string) map[string]string {
-	return makeParamsWithVersion(action, legacyAPIVersion)
-}
-
-func makeParamsVPC(action string) map[string]string {
-	return makeParamsWithVersion(action, vpcAPIVersion)
-}
-
-func makeParamsWithVersion(action, version string) map[string]string {
 	params := make(map[string]string)
 	params["Action"] = action
-	params["Version"] = version
+	params["Version"] = apiVersion
 	return params
 }
 
@@ -295,7 +298,10 @@ type Instance struct {
 	VirtType           string             `xml:"virtualizationType"`
 	Monitoring         string             `xml:"monitoring>state"`
 	AvailZone          string             `xml:"placement>availabilityZone"`
+	AssociatePublicIP  bool               `xml:"associatePublicIpAddress,omitempty"`
 	PlacementGroupName string             `xml:"placement>groupName"`
+	EbsOptimized       bool               `xml:"ebsOptimized,omitempty"`
+	SRIOVNetSupport    bool               `xml:"sriovNetSupport,omitempty"`
 	State              InstanceState      `xml:"instanceState"`
 	Tags               []Tag              `xml:"tagSet>item"`
 	SecurityGroups     []SecurityGroup    `xml:"groupSet>item"`
@@ -309,7 +315,7 @@ type Instance struct {
 //
 // See http://goo.gl/Mcm3b for more details.
 func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err error) {
-	params := prepareRunParams(*options)
+	params := makeParams("RunInstances")
 	params["ImageId"] = options.ImageId
 	params["InstanceType"] = options.InstanceType
 	var min, max int
@@ -385,16 +391,6 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 		return nil, err
 	}
 	return
-}
-
-func prepareRunParams(options RunInstances) map[string]string {
-	if options.SubnetId != "" || len(options.NetworkInterfaces) > 0 {
-		// When either SubnetId or NetworkInterfaces are specified, we
-		// need to use the API version with complete VPC support.
-		return makeParamsVPC("RunInstances")
-	} else {
-		return makeParams("RunInstances")
-	}
 }
 
 func prepareBlockDevices(params map[string]string, blockDevs []BlockDeviceMapping) {
@@ -596,6 +592,7 @@ type Image struct {
 	RootDeviceName     string               `xml:"rootDeviceName"`
 	VirtualizationType string               `xml:"virtualizationType"`
 	Hypervisor         string               `xml:"hypervisor"`
+	SRIOVNetSupport    bool                 `xml:"sriovNetSupport,omitempty"`
 	BlockDevices       []BlockDeviceMapping `xml:"blockDeviceMapping>item"`
 }
 
@@ -722,6 +719,7 @@ func (ec2 *EC2) Snapshots(ids []string, filter *Filter) (resp *SnapshotsResp, er
 type SimpleResp struct {
 	XMLName   xml.Name
 	RequestId string `xml:"requestId"`
+	Return    bool   `xml:"return"`
 }
 
 // CreateSecurityGroupResp represents a response to a CreateSecurityGroup request.
@@ -731,20 +729,12 @@ type CreateSecurityGroupResp struct {
 }
 
 // CreateSecurityGroup creates a security group with the provided name
-// and description.
+// and description. The vpcId argument can be empty to create a
+// EC2-Classic group, instead of EC2-VPC one.
 //
 // See http://goo.gl/Eo7Yl for more details.
-func (ec2 *EC2) CreateSecurityGroup(name, description string) (resp *CreateSecurityGroupResp, err error) {
-	return ec2.CreateSecurityGroupVPC("", name, description)
-}
-
-// CreateSecurityGroupVPC creates a security group in EC2, associated
-// with the given VPC ID. If vpcId is empty, this call is equivalent
-// to CreateSecurityGroup.
-//
-// See http://goo.gl/Eo7Yl for more details.
-func (ec2 *EC2) CreateSecurityGroupVPC(vpcId, name, description string) (resp *CreateSecurityGroupResp, err error) {
-	params := makeParamsVPC("CreateSecurityGroup")
+func (ec2 *EC2) CreateSecurityGroup(vpcId, name, description string) (resp *CreateSecurityGroupResp, err error) {
+	params := makeParams("CreateSecurityGroup")
 	params["GroupName"] = name
 	params["GroupDescription"] = description
 	if vpcId != "" {
@@ -787,15 +777,35 @@ type IPPerm struct {
 	Protocol     string              `xml:"ipProtocol"`
 	FromPort     int                 `xml:"fromPort"`
 	ToPort       int                 `xml:"toPort"`
-	SourceIPs    []string            `xml:"ipRanges>item>cidrIp"`
+	SourceIPs    []SourceIP          `xml:"ipRanges>item"`
 	SourceGroups []UserSecurityGroup `xml:"groups>item"`
+}
+
+// SourceIP represents a single security group source IP address
+// within an ingress permission rule.
+//
+// See http://goo.gl/4oTxv for more details.
+type SourceIP struct {
+	IP string `xml:"cidrIp"`
+}
+
+// SourceIPs is a helper for constructing []SourceIP from strings.
+func SourceIPs(ips ...string) []SourceIP {
+	if len(ips) == 0 {
+		return nil
+	}
+	result := make([]SourceIP, len(ips))
+	for i, ip := range ips {
+		result[i].IP = ip
+	}
+	return result
 }
 
 // UserSecurityGroup holds a security group and the owner
 // of that group.
 type UserSecurityGroup struct {
 	Id      string `xml:"groupId"`
-	Name    string `xml:"groupName"`
+	Name    string `xml:"groupName,omitempty"`
 	OwnerId string `xml:"userId"`
 }
 
@@ -902,7 +912,7 @@ func (ec2 *EC2) authOrRevoke(op string, group SecurityGroup, perms []IPPerm) (re
 		params[prefix+".FromPort"] = strconv.Itoa(perm.FromPort)
 		params[prefix+".ToPort"] = strconv.Itoa(perm.ToPort)
 		for j, ip := range perm.SourceIPs {
-			params[prefix+".IpRanges."+strconv.Itoa(j+1)+".CidrIp"] = ip
+			params[prefix+".IpRanges."+strconv.Itoa(j+1)+".CidrIp"] = ip.IP
 		}
 		for j, g := range perm.SourceGroups {
 			subprefix := prefix + ".Groups." + strconv.Itoa(j+1)
@@ -1078,7 +1088,7 @@ type AccountAttributesResp struct {
 //
 // See http://goo.gl/hBc28j for more details.
 func (ec2 *EC2) AccountAttributes(attrNames ...string) (*AccountAttributesResp, error) {
-	params := makeParamsVPC("DescribeAccountAttributes")
+	params := makeParams("DescribeAccountAttributes")
 	for i, attrName := range attrNames {
 		params["AttributeName."+strconv.Itoa(i+1)] = attrName
 	}

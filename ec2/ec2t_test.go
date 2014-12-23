@@ -15,6 +15,12 @@ import (
 	"gopkg.in/amz.v1/testutil"
 )
 
+// defaultAvailZone is the availability zone to use by default when
+// launching instances during live tests. Because t1.micro/m1.medium
+// instance types are not available (as of 2014-10-01) in some zones,
+// we use us-east-1c as t1.micro/m1.medium are still available there.
+const defaultAvailZone = "us-east-1c"
+
 // LocalServer represents a local ec2test fake server.
 type LocalServer struct {
 	auth   aws.Auth
@@ -75,13 +81,14 @@ func (s *LocalServerSuite) TestUserData(c *C) {
 		ImageId:      imageId,
 		InstanceType: "t1.micro",
 		UserData:     data,
+		AvailZone:    defaultAvailZone,
 	})
 	c.Assert(err, IsNil)
 	c.Assert(inst, NotNil)
 
 	id := inst.Instances[0].InstanceId
 
-	defer s.ec2.TerminateInstances([]string{id})
+	defer terminateInstances(c, s.ec2, []string{id})
 
 	tinst := s.srv.srv.Instance(id)
 	c.Assert(tinst, NotNil)
@@ -92,6 +99,7 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 	list, err := s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:      imageId,
 		InstanceType: "t1.micro",
+		AvailZone:    defaultAvailZone,
 	})
 	c.Assert(err, IsNil)
 
@@ -99,7 +107,7 @@ func (s *LocalServerSuite) TestInstanceInfo(c *C) {
 	c.Assert(inst, NotNil)
 
 	id := inst.InstanceId
-	defer s.ec2.TerminateInstances([]string{id})
+	defer terminateInstances(c, s.ec2, []string{id})
 
 	masked := func(addr string) string {
 		return net.ParseIP(addr).Mask(net.CIDRMask(24, 32)).String()
@@ -231,7 +239,18 @@ func (s *ServerTests) TestDescribeAccountAttributes(c *C) {
 		switch attr.Name {
 		case "supported-platforms":
 			sort.Strings(attr.Values)
-			c.Assert(attr.Values, DeepEquals, []string{"EC2", "VPC"})
+			c.Assert(attr.Values, Not(HasLen), 0)
+			if len(attr.Values) == 2 {
+				c.Assert(attr.Values, DeepEquals, []string{"EC2", "VPC"})
+			} else if len(attr.Values) == 1 {
+				// Some regions have only VPC or EC2 enabled, and
+				// because this test runs both against the local test
+				// server and the Amazon live servers we need to
+				// account for both cases.
+				c.Assert(attr.Values[0], Matches, `(EC2|VPC)`)
+			} else {
+				c.Fatalf("unexpected account attributes: %v", attr.Values)
+			}
 		case "default-vpc":
 			c.Assert(attr.Values, HasLen, 1)
 			c.Assert(attr.Values[0], Not(Equals), "")
@@ -245,8 +264,8 @@ func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
 	defaultVPCId, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
 	subnet := defaultSubnets[0]
 
-	g0 := s.makeTestGroupVPC(c, defaultVPCId, "goamz-test0", "ec2test group 0")
-	g1 := s.makeTestGroupVPC(c, defaultVPCId, "goamz-test1", "ec2test group 1")
+	g0 := s.makeTestGroup(c, defaultVPCId, "goamz-test0", "ec2test group 0")
+	g1 := s.makeTestGroup(c, defaultVPCId, "goamz-test1", "ec2test group 1")
 	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
 
 	ip1 := validIPForSubnet(c, subnet, 5)
@@ -271,7 +290,7 @@ func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
 	c.Assert(inst.NetworkInterfaces, HasLen, 1)
 
 	id := inst.InstanceId
-	defer s.ec2.TerminateInstances([]string{id})
+	defer terminateInstances(c, s.ec2, []string{id})
 
 	c.Check(inst.VPCId, Equals, subnet.VPCId)
 	c.Check(inst.SubnetId, Equals, subnet.Id)
@@ -329,6 +348,7 @@ func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
 		params.SubnetId = subnet.Id
 	} else {
 		subnet = &defaultSubnets[0]
+		params.AvailZone = defaultAvailZone
 	}
 	list, err := s.ec2.RunInstances(params)
 	c.Assert(err, IsNil)
@@ -338,7 +358,7 @@ func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
 	c.Assert(inst.NetworkInterfaces, HasLen, 1)
 
 	id := inst.InstanceId
-	defer s.ec2.TerminateInstances([]string{id})
+	defer terminateInstances(c, s.ec2, []string{id})
 
 	c.Check(inst.VPCId, Equals, defaultVPCId)
 	if inst.SubnetId != subnet.Id {
@@ -347,6 +367,7 @@ func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
 		for _, sub := range defaultSubnets {
 			if inst.SubnetId == sub.Id {
 				subnet = &sub
+				break
 			}
 		}
 	}
@@ -383,7 +404,12 @@ func (s *ServerTests) TestRunInstancesVPCCreatesDefaultNICWithSubnetIdNoNICs(c *
 
 func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	_, err := e.TerminateInstances(ids)
-	c.Assert(err, IsNil, Commentf("%v INSTANCES LEFT RUNNING!!!", ids))
+	if err != nil && c.Check(err, ErrorMatches, "InvalidInstanceID.NotFound") {
+		// Nothing to do.
+		return
+	} else {
+		c.Assert(err, IsNil, Commentf("%v INSTANCES LEFT RUNNING!!!", ids))
+	}
 	// We need to wait until the instances are really off, because
 	// entities that depend on them won't be deleted (i.e. groups,
 	// NICs, subnets, etc.)
@@ -420,26 +446,23 @@ func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	c.Fatalf("%v INSTANCES LEFT RUNNING!!!", ids)
 }
 
-func (s *ServerTests) makeTestGroup(c *C, name, descr string) ec2.SecurityGroup {
-	return s.makeTestGroupVPC(c, "", name, descr)
-}
-
-func (s *ServerTests) makeTestGroupVPC(c *C, vpcId, name, descr string) ec2.SecurityGroup {
+func (s *ServerTests) makeTestGroup(c *C, vpcId, name, descr string) ec2.SecurityGroup {
 	// Clean it up if a previous test left it around.
 	_, err := s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
 	if err != nil && errorCode(err) != "InvalidGroup.NotFound" {
 		c.Fatalf("delete security group: %v", err)
 	}
 
-	resp, err := s.ec2.CreateSecurityGroupVPC(vpcId, name, descr)
+	resp, err := s.ec2.CreateSecurityGroup(vpcId, name, descr)
 	c.Assert(err, IsNil)
-	c.Assert(resp.Name, Equals, name)
+	c.Assert(resp.Id, Matches, "sg-.+")
+	c.Logf("created group %v", resp.SecurityGroup)
 	return resp.SecurityGroup
 }
 
 func (s *ServerTests) TestIPPerms(c *C) {
-	g0 := s.makeTestGroup(c, "goamz-test0", "ec2test group 0")
-	g1 := s.makeTestGroup(c, "goamz-test1", "ec2test group 1")
+	g0 := s.makeTestGroup(c, "", "goamz-test0", "ec2test group 0")
+	g1 := s.makeTestGroup(c, "", "goamz-test1", "ec2test group 1")
 	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
 
 	resp, err := s.ec2.SecurityGroups([]ec2.SecurityGroup{g0, g1}, nil)
@@ -447,6 +470,10 @@ func (s *ServerTests) TestIPPerms(c *C) {
 	c.Assert(resp.Groups, HasLen, 2)
 	c.Assert(resp.Groups[0].IPPerms, HasLen, 0)
 	c.Assert(resp.Groups[1].IPPerms, HasLen, 0)
+	nameRegexp := fmt.Sprintf("(%s|%s)", regexp.QuoteMeta(g0.Name), regexp.QuoteMeta(g1.Name))
+	for _, rgroup := range resp.Groups {
+		c.Check(rgroup.Name, Matches, nameRegexp)
+	}
 
 	ownerId := resp.Groups[0].OwnerId
 
@@ -456,17 +483,17 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		Protocol:  "tcp",
 		FromPort:  0,
 		ToPort:    1024,
-		SourceIPs: []string{"z127.0.0.1/24"},
+		SourceIPs: ec2.SourceIPs("invalid"),
 	}})
 	c.Assert(err, NotNil)
-	c.Check(errorCode(err), Equals, "InvalidPermission.Malformed")
+	c.Check(errorCode(err), Equals, "InvalidParameterValue")
 
 	// Check that AuthorizeSecurityGroup adds the correct authorizations.
 	_, err = s.ec2.AuthorizeSecurityGroup(g0, []ec2.IPPerm{{
 		Protocol:  "tcp",
 		FromPort:  2000,
 		ToPort:    2001,
-		SourceIPs: []string{"127.0.0.0/24"},
+		SourceIPs: ec2.SourceIPs("127.0.0.0/24"),
 		SourceGroups: []ec2.UserSecurityGroup{{
 			Name: g1.Name,
 		}, {
@@ -476,64 +503,81 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		Protocol:  "tcp",
 		FromPort:  2000,
 		ToPort:    2001,
-		SourceIPs: []string{"200.1.1.34/32"},
+		SourceIPs: ec2.SourceIPs("200.1.1.34/32"),
 	}})
 	c.Assert(err, IsNil)
 
 	resp, err = s.ec2.SecurityGroups([]ec2.SecurityGroup{g0}, nil)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Groups, HasLen, 1)
-	c.Assert(resp.Groups[0].IPPerms, HasLen, 1)
-
-	perm := resp.Groups[0].IPPerms[0]
-	srcg := perm.SourceGroups
-	c.Assert(srcg, HasLen, 2)
-
-	// Normalize so we don't care about returned order.
-	if srcg[0].Name == g1.Name {
-		srcg[0], srcg[1] = srcg[1], srcg[0]
+	c.Assert(resp.Groups[0].IPPerms, HasLen, 3)
+	for _, ipperm := range resp.Groups[0].IPPerms {
+		sourceIPs := ipperm.SourceIPs
+		sourceGroups := ipperm.SourceGroups
+		if len(sourceIPs) == 0 {
+			// Only source groups should exist - one per IPPerm.
+			c.Check(sourceGroups, HasLen, 1)
+			c.Check(sourceIPs, IsNil)
+			// Because groups can come in any order, check for either id.
+			idRegexp := fmt.Sprintf("(%s|%s)", regexp.QuoteMeta(g0.Id), regexp.QuoteMeta(g1.Id))
+			c.Check(sourceGroups[0].Id, Matches, idRegexp)
+			c.Check(sourceGroups[0].Name, Equals, "")
+			c.Check(sourceGroups[0].OwnerId, Equals, ownerId)
+		} else if len(sourceGroups) == 0 {
+			// Only source IPs should exist.
+			c.Check(sourceGroups, IsNil)
+			c.Check(sourceIPs, HasLen, 2)
+			c.Check(sourceIPs, DeepEquals, ec2.SourceIPs("127.0.0.0/24", "200.1.1.34/32"))
+		}
+		c.Check(ipperm.Protocol, Equals, "tcp")
+		c.Check(ipperm.FromPort, Equals, 2000)
+		c.Check(ipperm.ToPort, Equals, 2001)
 	}
-	c.Check(srcg[0].Name, Equals, g0.Name)
-	c.Check(srcg[0].Id, Equals, g0.Id)
-	c.Check(srcg[0].OwnerId, Equals, ownerId)
-	c.Check(srcg[1].Name, Equals, g1.Name)
-	c.Check(srcg[1].Id, Equals, g1.Id)
-	c.Check(srcg[1].OwnerId, Equals, ownerId)
-
-	sort.Strings(perm.SourceIPs)
-	c.Check(perm.SourceIPs, DeepEquals, []string{"127.0.0.0/24", "200.1.1.34/32"})
 
 	// Check that we can't delete g1 (because g0 is using it)
 	_, err = s.ec2.DeleteSecurityGroup(g1)
 	c.Assert(err, NotNil)
-	c.Check(errorCode(err), Equals, "InvalidGroup.InUse")
+	c.Check(errorCode(err), Equals, "DependencyViolation")
 
 	_, err = s.ec2.RevokeSecurityGroup(g0, []ec2.IPPerm{{
 		Protocol:     "tcp",
 		FromPort:     2000,
 		ToPort:       2001,
 		SourceGroups: []ec2.UserSecurityGroup{{Id: g1.Id}},
+		SourceIPs:    nil,
 	}, {
-		Protocol:  "tcp",
-		FromPort:  2000,
-		ToPort:    2001,
-		SourceIPs: []string{"200.1.1.34/32"},
+		Protocol:     "tcp",
+		FromPort:     2000,
+		ToPort:       2001,
+		SourceGroups: nil,
+		SourceIPs:    ec2.SourceIPs("200.1.1.34/32"),
 	}})
 	c.Assert(err, IsNil)
 
 	resp, err = s.ec2.SecurityGroups([]ec2.SecurityGroup{g0}, nil)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Groups, HasLen, 1)
-	c.Assert(resp.Groups[0].IPPerms, HasLen, 1)
-
-	perm = resp.Groups[0].IPPerms[0]
-	srcg = perm.SourceGroups
-	c.Assert(srcg, HasLen, 1)
-	c.Check(srcg[0].Name, Equals, g0.Name)
-	c.Check(srcg[0].Id, Equals, g0.Id)
-	c.Check(srcg[0].OwnerId, Equals, ownerId)
-
-	c.Check(perm.SourceIPs, DeepEquals, []string{"127.0.0.0/24"})
+	c.Assert(resp.Groups[0].IPPerms, HasLen, 2)
+	for _, ipperm := range resp.Groups[0].IPPerms {
+		sourceIPs := ipperm.SourceIPs
+		sourceGroups := ipperm.SourceGroups
+		if len(sourceIPs) == 0 {
+			// Only source groups should exist - one per IPPerm.
+			c.Check(sourceGroups, HasLen, 1)
+			c.Check(sourceIPs, IsNil)
+			c.Check(sourceGroups[0].Id, Matches, g0.Id)
+			c.Check(sourceGroups[0].Name, Equals, "")
+			c.Check(sourceGroups[0].OwnerId, Equals, ownerId)
+		} else if len(sourceGroups) == 0 {
+			// Only source IPs should exist.
+			c.Check(sourceGroups, IsNil)
+			c.Check(sourceIPs, HasLen, 1)
+			c.Check(sourceIPs, DeepEquals, ec2.SourceIPs("127.0.0.0/24"))
+		}
+		c.Check(ipperm.Protocol, Equals, "tcp")
+		c.Check(ipperm.FromPort, Equals, 2000)
+		c.Check(ipperm.ToPort, Equals, 2001)
+	}
 
 	// We should be able to delete g1 now because we've removed its only use.
 	_, err = s.ec2.DeleteSecurityGroup(g1)
@@ -557,7 +601,7 @@ func (s *ServerTests) TestDuplicateIPPerm(c *C) {
 	s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
 	defer s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
 
-	resp1, err := s.ec2.CreateSecurityGroup(name, descr)
+	resp1, err := s.ec2.CreateSecurityGroup("", name, descr)
 	c.Assert(err, IsNil)
 	c.Assert(resp1.Name, Equals, name)
 
@@ -565,12 +609,12 @@ func (s *ServerTests) TestDuplicateIPPerm(c *C) {
 		Protocol:  "tcp",
 		FromPort:  200,
 		ToPort:    1024,
-		SourceIPs: []string{"127.0.0.1/24"},
+		SourceIPs: ec2.SourceIPs("127.0.0.1/24"),
 	}, {
 		Protocol:  "tcp",
 		FromPort:  0,
 		ToPort:    100,
-		SourceIPs: []string{"127.0.0.1/24"},
+		SourceIPs: ec2.SourceIPs("127.0.0.1/24"),
 	}}
 
 	_, err = s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: name}, perms[0:1])
@@ -596,19 +640,25 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 	defer s.deleteSubnets(c, []string{subId})
 
 	groupResp, err := s.ec2.CreateSecurityGroup(
-		sessionName("testgroup1"),
+		"", sessionName("testgroup1"),
 		"testgroup one description",
 	)
 	c.Assert(err, IsNil)
 	group1 := groupResp.SecurityGroup
+	c.Assert(group1.Name, Not(Equals), "")
+	c.Assert(group1.Id, Matches, "sg-.+")
+	c.Logf("created group %v", group1)
 
-	groupResp, err = s.ec2.CreateSecurityGroupVPC(
+	groupResp, err = s.ec2.CreateSecurityGroup(
 		vpcId,
 		sessionName("testgroup2"),
 		"testgroup two description vpc",
 	)
 	c.Assert(err, IsNil)
 	group2 := groupResp.SecurityGroup
+	c.Assert(group2.Name, Not(Equals), "")
+	c.Assert(group2.Id, Matches, "sg-.+")
+	c.Logf("created group %v", group2)
 
 	defer s.deleteGroups(c, []ec2.SecurityGroup{group1, group2})
 
@@ -617,6 +667,7 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 		MinCount:       2,
 		ImageId:        imageId,
 		InstanceType:   "t1.micro",
+		AvailZone:      defaultAvailZone,
 		SecurityGroups: []ec2.SecurityGroup{group1},
 	})
 	c.Assert(err, IsNil)
@@ -680,21 +731,9 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 				{"instance-id", []string{"i-deadbeef12345"}},
 			},
 		}, {
-			about: "check that filtering on group id works",
-			filters: []filterSpec{
-				{"group-id", []string{group1.Id}},
-			},
-			resultIds: ids(0, 1),
-		}, {
 			about: "check that filtering on group id with instance prefix works",
 			filters: []filterSpec{
 				{"instance.group-id", []string{group1.Id}},
-			},
-			resultIds: ids(0, 1),
-		}, {
-			about: "check that filtering on group name works",
-			filters: []filterSpec{
-				{"group-name", []string{group1.Name}},
 			},
 			resultIds: ids(0, 1),
 		}, {
@@ -714,14 +753,14 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 			about: "combination filters 1",
 			filters: []filterSpec{
 				{"image-id", []string{imageId, imageId2}},
-				{"group-name", []string{group1.Name}},
+				{"instance.group-name", []string{group1.Name}},
 			},
 			resultIds: ids(0, 1),
 		}, {
 			about: "combination filters 2",
 			filters: []filterSpec{
 				{"image-id", []string{imageId2}},
-				{"group-name", []string{group1.Name}},
+				{"instance.group-name", []string{group1.Name}},
 			},
 		}, {
 			about: "VPC filters in combination",
@@ -741,12 +780,16 @@ func (s *ServerTests) TestInstanceFiltering(c *C) {
 				f.Add(spec.name, spec.values...)
 			}
 		}
+		c.Logf("\nusing filter: %v", f)
+		c.Logf("\nexpecting results: %v", t.resultIds)
 		resp, err := s.ec2.Instances(t.instanceIds, f)
 		if t.err != "" {
 			c.Check(err, ErrorMatches, t.err)
 			continue
 		}
-		c.Assert(err, IsNil)
+		if !c.Check(err, IsNil) {
+			continue
+		}
 		insts := make(map[string]*ec2.Instance)
 		for _, r := range resp.Reservations {
 			for j := range r.Instances {
@@ -774,7 +817,7 @@ func (s *AmazonServerSuite) TestRunInstancesVPC(c *C) {
 	subId := subResp.Subnet.Id
 	defer s.deleteSubnets(c, []string{subId})
 
-	groupResp, err := s.ec2.CreateSecurityGroupVPC(
+	groupResp, err := s.ec2.CreateSecurityGroup(
 		vpcId,
 		sessionName("testgroup1 vpc"),
 		"testgroup description vpc",
@@ -882,9 +925,9 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			// Create the first one as a VPC group.
 			gid += " vpc"
 			desc += " vpc"
-			resp, err = s.ec2.CreateSecurityGroupVPC(vpcId, gid, desc)
+			resp, err = s.ec2.CreateSecurityGroup(vpcId, gid, desc)
 		} else {
-			resp, err = s.ec2.CreateSecurityGroup(gid, desc)
+			resp, err = s.ec2.CreateSecurityGroup("", gid, desc)
 		}
 		c.Assert(err, IsNil)
 		g[i] = resp.SecurityGroup
@@ -896,26 +939,22 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 	// to wait 5s each time deleteGroups runs.
 	defer s.deleteGroups(c, []ec2.SecurityGroup{g[3], g[0], g[1], g[2], g[4]})
 
-	perms := [][]ec2.IPPerm{
-		{{
-			Protocol:  "tcp",
-			FromPort:  100,
-			ToPort:    200,
-			SourceIPs: []string{"1.2.3.4/32"},
-		}},
-		{{
-			Protocol:     "tcp",
-			FromPort:     200,
-			ToPort:       300,
-			SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
-		}},
-		{{
-			Protocol:     "udp",
-			FromPort:     200,
-			ToPort:       400,
-			SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
-		}},
-	}
+	perms := [][]ec2.IPPerm{{{
+		Protocol:  "tcp",
+		FromPort:  100,
+		ToPort:    200,
+		SourceIPs: ec2.SourceIPs("1.2.3.4/32"),
+	}}, {{
+		Protocol:     "tcp",
+		FromPort:     200,
+		ToPort:       300,
+		SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
+	}}, {{
+		Protocol:     "udp",
+		FromPort:     200,
+		ToPort:       400,
+		SourceGroups: []ec2.UserSecurityGroup{{Id: g[2].Id}},
+	}}}
 	for i, ps := range perms {
 		_, err := s.ec2.AuthorizeSecurityGroup(g[i+1], ps)
 		c.Assert(err, IsNil)
@@ -959,7 +998,7 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 			results: groups(1, 2),
 		}, {
 			about:  "check that specifying a non-existent group id gives an error",
-			groups: append(groups(0), ec2.SecurityGroup{Id: "sg-eeeeeeeee"}),
+			groups: append(groups(0), ec2.SecurityGroup{Id: "sg-eeeeeeee"}),
 			err:    `.*\(InvalidGroup\.NotFound\)`,
 		}, {
 			about: "check that a filter allowed two groups returns both of them",
@@ -978,13 +1017,14 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		}, {
 			about: "check that a filter allowing no groups returns none",
 			filters: []filterSpec{
-				{"group-id", []string{"sg-eeeeeeeee"}},
+				{"group-id", []string{"sg-eeeeeeee"}},
 			},
 		},
 		filterCheck("description", "testdescription1", groups(1)),
 		filterCheck("group-name", g[2].Name, groups(2)),
+		filterCheck("group-id", g[2].Id, groups(2)),
 		filterCheck("ip-permission.cidr", "1.2.3.4/32", groups(1)),
-		filterCheck("ip-permission.group-name", g[2].Name, groups(2, 3)),
+		filterCheck("ip-permission.group-id", g[2].Id, groups(2, 3)),
 		filterCheck("ip-permission.protocol", "udp", groups(3)),
 		filterCheck("ip-permission.from-port", "200", groups(2, 3)),
 		filterCheck("ip-permission.to-port", "200", groups(1)),
@@ -1000,17 +1040,20 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 				f.Add(spec.name, spec.values...)
 			}
 		}
+		c.Logf("\nusing filter: %v", f)
+		c.Logf("\nexpecting results: %v", t.results)
 		resp, err := s.ec2.SecurityGroups(t.groups, f)
 		if t.err != "" {
 			c.Check(err, ErrorMatches, t.err)
 			continue
 		}
-		c.Assert(err, IsNil)
+		if !c.Check(err, IsNil) {
+			continue
+		}
 		groups := make(map[string]*ec2.SecurityGroup)
 		for j := range resp.Groups {
 			group := &resp.Groups[j].SecurityGroup
 			c.Check(groups[group.Id], IsNil, Commentf("duplicate group id: %q", group.Id))
-
 			groups[group.Id] = group
 		}
 		// If extra groups may be returned, eliminate all groups that
@@ -1026,8 +1069,9 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		c.Check(groups, HasLen, len(t.results))
 		for j, g := range t.results {
 			rg := groups[g.Id]
-			c.Assert(rg, NotNil, Commentf("group %d (%v) not found; got %#v", j, g, groups))
-			c.Check(rg.Name, Equals, g.Name, Commentf("group %d (%v)", j, g))
+			if c.Check(rg, NotNil, Commentf("group %d (%v) not found; got %#v", j, g, groups)) {
+				c.Check(rg.Name, Equals, g.Name, Commentf("group %d (%v)", j, g))
+			}
 		}
 	}
 }

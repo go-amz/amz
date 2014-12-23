@@ -2,16 +2,22 @@ package ec2_test
 
 var ErrorDump = `
 <?xml version="1.0" encoding="UTF-8"?>
-<Response><Errors><Error><Code>UnsupportedOperation</Code>
-<Message>AMIs with an instance-store root device are not supported for the instance type 't1.micro'.</Message>
-</Error></Errors><RequestID>0503f4e9-bbd6-483c-b54f-c4ae9f3b30f4</RequestID></Response>
+<Response>
+   <Errors>
+      <Error>
+         <Code>UnsupportedOperation</Code>
+         <Message>AMIs with an instance-store root device are not supported for the instance type 't1.micro'.</Message>
+      </Error>
+   </Errors>
+   <RequestID>0503f4e9-bbd6-483c-b54f-c4ae9f3b30f4</RequestID>
+</Response>
 `
 
 // http://goo.gl/Mcm3b
 var RunInstancesExample = `
-<RunInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-13/"> 
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
-  <reservationId>r-47a5402e</reservationId> 
+<RunInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+  <reservationId>r-47a5402e</reservationId>
   <ownerId>999988887777</ownerId>
   <groupSet>
       <item>
@@ -171,8 +177,8 @@ var RunInstancesExample = `
 
 // http://goo.gl/3BKHj
 var TerminateInstancesExample = `
-<TerminateInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<TerminateInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <instancesSet>
     <item>
       <instanceId>i-3ea74257</instanceId>
@@ -191,7 +197,7 @@ var TerminateInstancesExample = `
 
 // http://goo.gl/mLbmw
 var DescribeInstancesExample1 = `
-<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>98e3c9a4-848c-4d6d-8e8a-b1bdEXAMPLE</requestId>
   <reservationSet>
     <item>
@@ -326,8 +332,8 @@ var DescribeInstancesExample1 = `
 
 // http://goo.gl/mLbmw
 var DescribeInstancesExample2 = `
-<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/"> 
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<DescribeInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <reservationSet>
     <item>
       <reservationId>r-bc7e30d7</reservationId>
@@ -399,7 +405,7 @@ var DescribeInstancesExample2 = `
 
 // http://goo.gl/V0U25
 var DescribeImagesExample = `
-<DescribeImagesResponse xmlns="http://ec2.amazonaws.com/doc/2012-08-15/">
+<DescribeImagesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
          <requestId>4a4a27a2-2e7c-475d-b35b-ca822EXAMPLE</requestId>
     <imagesSet>
         <item>
@@ -441,7 +447,7 @@ var DescribeImagesExample = `
 
 // http://goo.gl/ttcda
 var CreateSnapshotExample = `
-<CreateSnapshotResponse xmlns="http://ec2.amazonaws.com/doc/2012-10-01/">
+<CreateSnapshotResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <snapshotId>snap-78a54011</snapshotId>
   <volumeId>vol-4d826724</volumeId>
@@ -456,16 +462,16 @@ var CreateSnapshotExample = `
 
 // http://goo.gl/vwU1y
 var DeleteSnapshotExample = `
-<DeleteSnapshotResponse xmlns="http://ec2.amazonaws.com/doc/2012-10-01/">
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<DeleteSnapshotResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <return>true</return>
 </DeleteSnapshotResponse>
 `
 
 // http://goo.gl/nkovs
 var DescribeSnapshotsExample = `
-<DescribeSnapshotsResponse xmlns="http://ec2.amazonaws.com/doc/2012-10-01/">
-   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<DescribeSnapshotsResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <snapshotSet>
       <item>
          <snapshotId>snap-1a2b3c4d</snapshotId>
@@ -489,7 +495,7 @@ var DescribeSnapshotsExample = `
 
 // http://goo.gl/Eo7Yl
 var CreateSecurityGroupExample = `
-<CreateSecurityGroupResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<CreateSecurityGroupResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <return>true</return>
    <groupId>sg-67ad940e</groupId>
@@ -498,8 +504,8 @@ var CreateSecurityGroupExample = `
 
 // http://goo.gl/k12Uy
 var DescribeSecurityGroupsExample = `
-<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <securityGroupInfo>
     <item>
       <ownerId>999988887777</ownerId>
@@ -542,7 +548,7 @@ var DescribeSecurityGroupsExample = `
 // A dump which includes groups within ip permissions.
 var DescribeSecurityGroupsDump = `
 <?xml version="1.0" encoding="UTF-8"?>
-<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
     <requestId>87b92b57-cc6e-48b2-943f-f6f0e5c9f46c</requestId>
     <securityGroupInfo>
         <item>
@@ -584,7 +590,7 @@ var DescribeSecurityGroupsDump = `
 
 // http://goo.gl/QJJDO
 var DeleteSecurityGroupExample = `
-<DeleteSecurityGroupResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<DeleteSecurityGroupResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <return>true</return>
 </DeleteSecurityGroupResponse>
@@ -592,7 +598,7 @@ var DeleteSecurityGroupExample = `
 
 // http://goo.gl/u2sDJ
 var AuthorizeSecurityGroupIngressExample = `
-<AuthorizeSecurityGroupIngressResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<AuthorizeSecurityGroupIngressResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <return>true</return>
 </AuthorizeSecurityGroupIngressResponse>
@@ -600,15 +606,15 @@ var AuthorizeSecurityGroupIngressExample = `
 
 // http://goo.gl/Mz7xr
 var RevokeSecurityGroupIngressExample = `
-<RevokeSecurityGroupIngressResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<RevokeSecurityGroupIngressResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <return>true</return>
 </RevokeSecurityGroupIngressResponse>
 `
 
 // http://goo.gl/Vmkqc
 var CreateTagsExample = `
-<CreateTagsResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<CreateTagsResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <return>true</return>
 </CreateTagsResponse>
@@ -616,8 +622,8 @@ var CreateTagsExample = `
 
 // http://goo.gl/awKeF
 var StartInstancesExample = `
-<StartInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>   
+<StartInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <instancesSet>
     <item>
       <instanceId>i-10a64379</instanceId>
@@ -636,8 +642,8 @@ var StartInstancesExample = `
 
 // http://goo.gl/436dJ
 var StopInstancesExample = `
-<StopInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
-  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<StopInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <instancesSet>
     <item>
       <instanceId>i-10a64379</instanceId>
@@ -656,7 +662,7 @@ var StopInstancesExample = `
 
 // http://goo.gl/baoUf
 var RebootInstancesExample = `
-<RebootInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2011-12-15/">
+<RebootInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
   <return>true</return>
 </RebootInstancesResponse>
@@ -665,7 +671,7 @@ var RebootInstancesExample = `
 // http://goo.gl/ylxT4R
 var DescribeAvailabilityZonesExample1 = `
 <DescribeAvailabilityZonesResponse xmlns="http://ec2.amazonaws.com/doc/2014-05-01/">
-   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <availabilityZoneInfo>
    <item>
       <zoneName>us-east-1a</zoneName>
@@ -697,8 +703,8 @@ var DescribeAvailabilityZonesExample1 = `
 
 // http://goo.gl/ylxT4R
 var DescribeAvailabilityZonesExample2 = `
-<DescribeAvailabilityZonesResponse xmlns="http://ec2.amazonaws.com/doc/2014-05-01/">
-   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+<DescribeAvailabilityZonesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <availabilityZoneInfo>
    <item>
       <zoneName>us-east-1a</zoneName>
@@ -720,7 +726,7 @@ var DescribeAvailabilityZonesExample2 = `
 
 // http://goo.gl/nkwjv
 var CreateVpcExample = `
-<CreateVpcResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<CreateVpcResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
    <vpc>
       <vpcId>vpc-1a2b3c4d</vpcId>
@@ -735,7 +741,7 @@ var CreateVpcExample = `
 
 // http://goo.gl/bcxtbf
 var DeleteVpcExample = `
-<DeleteVpcResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<DeleteVpcResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
    <return>true</return>
 </DeleteVpcResponse>
@@ -743,7 +749,7 @@ var DeleteVpcExample = `
 
 // http://goo.gl/Y5kHqG
 var DescribeVpcsExample = `
-<DescribeVpcsResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<DescribeVpcsResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <vpcSet>
     <item>
@@ -761,7 +767,7 @@ var DescribeVpcsExample = `
 
 // http://goo.gl/wLPhf
 var CreateSubnetExample = `
-<CreateSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<CreateSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <subnet>
     <subnetId>subnet-9d4a7b6c</subnetId>
@@ -777,7 +783,7 @@ var CreateSubnetExample = `
 
 // http://goo.gl/KmhcBM
 var DeleteSubnetExample = `
-<DeleteSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<DeleteSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
    <return>true</return>
 </DeleteSubnetResponse>
@@ -785,7 +791,7 @@ var DeleteSubnetExample = `
 
 // http://goo.gl/NTKQVI
 var DescribeSubnetsExample = `
-<DescribeSubnetsResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<DescribeSubnetsResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <subnetSet>
     <item>
@@ -816,7 +822,7 @@ var DescribeSubnetsExample = `
 
 // http://goo.gl/ze3VhA
 var CreateNetworkInterfaceExample = `
-<CreateNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<CreateNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
  <requestId>8dbe591e-5a22-48cb-b948-dd0aadd55adf</requestId>
     <networkInterface>
         <networkInterfaceId>eni-cfca76a6</networkInterfaceId>
@@ -849,7 +855,7 @@ var CreateNetworkInterfaceExample = `
 
 // http://goo.gl/MC1yOj
 var DeleteNetworkInterfaceExample = `
-<DeleteNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<DeleteNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
     <requestId>e1c6d73b-edaa-4e62-9909-6611404e1739</requestId>
     <return>true</return>
 </DeleteNetworkInterfaceResponse>
@@ -857,7 +863,7 @@ var DeleteNetworkInterfaceExample = `
 
 // http://goo.gl/2LcXtM
 var DescribeNetworkInterfacesExample = `
-<DescribeNetworkInterfacesResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<DescribeNetworkInterfacesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
     <requestId>fc45294c-006b-457b-bab9-012f5b3b0e40</requestId>
      <networkInterfaceSet>
        <item>
@@ -948,7 +954,7 @@ var DescribeNetworkInterfacesExample = `
 
 // http://goo.gl/rEbSii
 var AttachNetworkInterfaceExample = `
-<AttachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<AttachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
     <requestId>ace8cd1e-e685-4e44-90fb-92014d907212</requestId>
     <attachmentId>eni-attach-d94b09b0</attachmentId>
 </AttachNetworkInterfaceResponse>
@@ -956,7 +962,7 @@ var AttachNetworkInterfaceExample = `
 
 // http://goo.gl/0Xc1px
 var DetachNetworkInterfaceExample = `
-<DetachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<DetachNetworkInterfaceResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
     <requestId>ce540707-0635-46bc-97da-33a8a362a0e8</requestId>
     <return>true</return>
 </DetachNetworkInterfaceResponse>
@@ -964,7 +970,7 @@ var DetachNetworkInterfaceExample = `
 
 // http://goo.gl/MoeH0L
 var AssignPrivateIpAddressesExample = `
-<AssignPrivateIpAddresses xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<AssignPrivateIpAddresses xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <return>true</return>
 </AssignPrivateIpAddresses>
@@ -972,7 +978,7 @@ var AssignPrivateIpAddressesExample = `
 
 // http://goo.gl/RjGZdB
 var UnassignPrivateIpAddressesExample = `
-<UnassignPrivateIpAddresses xmlns="http://ec2.amazonaws.com/doc/2013-10-15/">
+<UnassignPrivateIpAddresses xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
    <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
    <return>true</return>
 </UnassignPrivateIpAddresses>
@@ -980,7 +986,7 @@ var UnassignPrivateIpAddressesExample = `
 
 // http://goo.gl/hBc28j
 var DescribeAccountAttributesExample = `
-<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-02-01/">
+<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <accountAttributeSet>
     <item>
@@ -997,7 +1003,7 @@ var DescribeAccountAttributesExample = `
 
 // http://goo.gl/hBc28j
 var DescribeAccountAttributesExample2 = `
-<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-02-01/">
+<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <accountAttributeSet>
     <item>
@@ -1014,7 +1020,7 @@ var DescribeAccountAttributesExample2 = `
 
 // http://goo.gl/hBc28j
 var DescribeAccountAttributesExample3 = `
-<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-02-01/">
+<DescribeAccountAttributesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
   <accountAttributeSet>
     <item>

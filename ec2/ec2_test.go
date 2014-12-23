@@ -129,11 +129,6 @@ func (s *S) TestRunInstancesExample(c *C) {
 			}},
 		}},
 	}
-	params := ec2.PrepareRunParams(options)
-	c.Assert(params, DeepEquals, map[string]string{
-		"Version": "2013-10-15",
-		"Action":  "RunInstances",
-	})
 	resp, err := s.ec2.RunInstances(&options)
 
 	req := testServer.WaitRequest()
@@ -504,12 +499,12 @@ func (s *S) checkCreateSGResponse(c *C, resp *ec2.CreateSecurityGroupResp, id, n
 
 func (s *S) TestCreateSecurityGroupExample(c *C) {
 	testServer.Response(200, nil, CreateSecurityGroupExample)
-	resp, err := s.ec2.CreateSecurityGroup("websrv", "Web Servers")
+	resp, err := s.ec2.CreateSecurityGroup("", "websrv", "Web Servers")
 	c.Assert(err, IsNil)
 	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "")
 
 	testServer.Response(200, nil, CreateSecurityGroupExample)
-	resp, err = s.ec2.CreateSecurityGroupVPC("vpc-id", "websrv", "Web Servers")
+	resp, err = s.ec2.CreateSecurityGroup("vpc-id", "websrv", "Web Servers")
 	c.Assert(err, IsNil)
 	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "vpc-id")
 }
@@ -539,7 +534,7 @@ func (s *S) TestDescribeSecurityGroupsExample(c *C) {
 	c.Assert(g0ipp.Protocol, Equals, "tcp")
 	c.Assert(g0ipp.FromPort, Equals, 80)
 	c.Assert(g0ipp.ToPort, Equals, 80)
-	c.Assert(g0ipp.SourceIPs, DeepEquals, []string{"0.0.0.0/0"})
+	c.Assert(g0ipp.SourceIPs, DeepEquals, ec2.SourceIPs("0.0.0.0/0"))
 
 	g1 := resp.Groups[1]
 	c.Assert(g1.OwnerId, Equals, "999988887777")
@@ -640,7 +635,7 @@ func (s *S) TestAuthorizeSecurityGroupExample1(c *C) {
 		Protocol:  "tcp",
 		FromPort:  80,
 		ToPort:    80,
-		SourceIPs: []string{"205.192.0.0/16", "205.159.0.0/16"},
+		SourceIPs: ec2.SourceIPs("205.192.0.0/16", "205.159.0.0/16"),
 	}}
 	resp, err := s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: "websrv"}, perms)
 
@@ -665,7 +660,7 @@ func (s *S) TestAuthorizeSecurityGroupExample1WithId(c *C) {
 		Protocol:  "tcp",
 		FromPort:  80,
 		ToPort:    80,
-		SourceIPs: []string{"205.192.0.0/16", "205.159.0.0/16"},
+		SourceIPs: ec2.SourceIPs("205.192.0.0/16", "205.159.0.0/16"),
 	}}
 	// ignore return and error - we're only want to check the parameter handling.
 	s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Id: "sg-67ad940e", Name: "ignored"}, perms)

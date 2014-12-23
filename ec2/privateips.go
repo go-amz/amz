@@ -24,7 +24,7 @@ import (
 //
 // See http://goo.gl/MoeH0L more details.
 func (ec2 *EC2) AssignPrivateIPAddresses(interfaceId string, ipAddresses []string, secondaryIPCount int, allowReassignment bool) (resp *SimpleResp, err error) {
-	params := makeParamsVPC("AssignPrivateIpAddresses")
+	params := makeParams("AssignPrivateIpAddresses")
 	params["NetworkInterfaceId"] = interfaceId
 	if secondaryIPCount > 0 {
 		params["SecondaryPrivateIpAddressCount"] = strconv.Itoa(secondaryIPCount)
@@ -51,7 +51,7 @@ func (ec2 *EC2) AssignPrivateIPAddresses(interfaceId string, ipAddresses []strin
 //
 // See http://goo.gl/RjGZdB for more details.
 func (ec2 *EC2) UnassignPrivateIPAddresses(interfaceId string, ipAddresses []string) (resp *SimpleResp, err error) {
-	params := makeParamsVPC("UnassignPrivateIpAddresses")
+	params := makeParams("UnassignPrivateIpAddresses")
 	params["NetworkInterfaceId"] = interfaceId
 	for i, ip := range ipAddresses {
 		// PrivateIpAddress is zero indexed.
