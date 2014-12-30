@@ -192,6 +192,25 @@ func (s *S) TestPutReader(c *C) {
 	c.Assert(req.Header["X-Amz-Acl"], DeepEquals, []string{"private"})
 }
 
+func (s *S) TestPutReaderEncoding(c *C) {
+	testServer.Response(200, nil, "")
+
+	b := s.s3.Bucket("bucket")
+	buf := bytes.NewBufferString("content")
+	err := b.PutReaderEncoding("name", buf, int64(buf.Len()), "content-type", s3.Private, "xz")
+	c.Assert(err, IsNil)
+
+	req := testServer.WaitRequest()
+	c.Assert(req.Method, Equals, "PUT")
+	c.Assert(req.URL.Path, Equals, "/bucket/name")
+	c.Assert(req.Header["Date"], Not(DeepEquals), []string{""})
+	c.Assert(req.Header["Content-Type"], DeepEquals, []string{"content-type"})
+	c.Assert(req.Header["Content-Length"], DeepEquals, []string{"7"})
+	c.Assert(req.Header["Content-Encoding"], DeepEquals, []string{"xz"})
+	//c.Assert(req.Header["Content-MD5"], Equals, "...")
+	c.Assert(req.Header["X-Amz-Acl"], DeepEquals, []string{"private"})
+}
+
 // DelObject docs: http://goo.gl/APeTt
 
 func (s *S) TestDelObject(c *C) {
