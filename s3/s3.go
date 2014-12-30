@@ -192,16 +192,22 @@ func (b *Bucket) Put(path string, data []byte, contType string, perm ACL) error 
 // PutReader inserts an object into the S3 bucket by consuming data
 // from r until EOF.
 func (b *Bucket) PutReader(path string, r io.Reader, length int64, contType string, perm ACL) error {
-	headers := map[string][]string{
-		"Content-Length": {strconv.FormatInt(length, 10)},
-		"Content-Type":   {contType},
-		"x-amz-acl":      {string(perm)},
-	}
+	return b.PutReaderWithHeader(path, r, length, contType, perm, http.Header{})
+}
+
+// PutReader inserts an object into the S3 bucket by consuming data
+// from r until EOF. The HTTP PUT request will have the additional
+// headers provided. This is useful for cache control etc.
+func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, contType string, perm ACL, hdrs http.Header) error {
+	hdrs.Set("Content-Length", strconv.FormatInt(length, 10))
+	hdrs.Set("Content-Type", contType)
+	hdrs.Set("x-amz-acl", string(perm))
+
 	req := &request{
 		method:  "PUT",
 		bucket:  b.Name,
 		path:    path,
-		headers: headers,
+		headers: hdrs,
 		payload: r,
 	}
 	return b.S3.query(req, nil)
