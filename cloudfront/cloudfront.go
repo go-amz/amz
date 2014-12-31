@@ -7,11 +7,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/crowdmob/goamz/aws"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/amz.v1/aws"
 )
 
 type CloudFront struct {
