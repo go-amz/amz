@@ -777,28 +777,8 @@ type IPPerm struct {
 	Protocol     string              `xml:"ipProtocol"`
 	FromPort     int                 `xml:"fromPort"`
 	ToPort       int                 `xml:"toPort"`
-	SourceIPs    []SourceIP          `xml:"ipRanges>item"`
+	SourceIPs    []string            `xml:"ipRanges>item>cidrIp"`
 	SourceGroups []UserSecurityGroup `xml:"groups>item"`
-}
-
-// SourceIP represents a single security group source IP address
-// within an ingress permission rule.
-//
-// See http://goo.gl/4oTxv for more details.
-type SourceIP struct {
-	IP string `xml:"cidrIp"`
-}
-
-// SourceIPs is a helper for constructing []SourceIP from strings.
-func SourceIPs(ips ...string) []SourceIP {
-	if len(ips) == 0 {
-		return nil
-	}
-	result := make([]SourceIP, len(ips))
-	for i, ip := range ips {
-		result[i].IP = ip
-	}
-	return result
 }
 
 // UserSecurityGroup holds a security group and the owner
@@ -912,7 +892,7 @@ func (ec2 *EC2) authOrRevoke(op string, group SecurityGroup, perms []IPPerm) (re
 		params[prefix+".FromPort"] = strconv.Itoa(perm.FromPort)
 		params[prefix+".ToPort"] = strconv.Itoa(perm.ToPort)
 		for j, ip := range perm.SourceIPs {
-			params[prefix+".IpRanges."+strconv.Itoa(j+1)+".CidrIp"] = ip.IP
+			params[prefix+".IpRanges."+strconv.Itoa(j+1)+".CidrIp"] = ip
 		}
 		for j, g := range perm.SourceGroups {
 			subprefix := prefix + ".Groups." + strconv.Itoa(j+1)

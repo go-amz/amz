@@ -483,7 +483,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		Protocol:  "tcp",
 		FromPort:  0,
 		ToPort:    1024,
-		SourceIPs: ec2.SourceIPs("invalid"),
+		SourceIPs: []string{"invalid"},
 	}})
 	c.Assert(err, NotNil)
 	c.Check(errorCode(err), Equals, "InvalidParameterValue")
@@ -493,7 +493,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		Protocol:  "tcp",
 		FromPort:  2000,
 		ToPort:    2001,
-		SourceIPs: ec2.SourceIPs("127.0.0.0/24"),
+		SourceIPs: []string{"127.0.0.0/24"},
 		SourceGroups: []ec2.UserSecurityGroup{{
 			Name: g1.Name,
 		}, {
@@ -503,7 +503,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		Protocol:  "tcp",
 		FromPort:  2000,
 		ToPort:    2001,
-		SourceIPs: ec2.SourceIPs("200.1.1.34/32"),
+		SourceIPs: []string{"200.1.1.34/32"},
 	}})
 	c.Assert(err, IsNil)
 
@@ -527,7 +527,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 			// Only source IPs should exist.
 			c.Check(sourceGroups, IsNil)
 			c.Check(sourceIPs, HasLen, 2)
-			c.Check(sourceIPs, DeepEquals, ec2.SourceIPs("127.0.0.0/24", "200.1.1.34/32"))
+			c.Check(sourceIPs, DeepEquals, []string{"127.0.0.0/24", "200.1.1.34/32"})
 		}
 		c.Check(ipperm.Protocol, Equals, "tcp")
 		c.Check(ipperm.FromPort, Equals, 2000)
@@ -550,7 +550,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 		FromPort:     2000,
 		ToPort:       2001,
 		SourceGroups: nil,
-		SourceIPs:    ec2.SourceIPs("200.1.1.34/32"),
+		SourceIPs:    []string{"200.1.1.34/32"},
 	}})
 	c.Assert(err, IsNil)
 
@@ -572,7 +572,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 			// Only source IPs should exist.
 			c.Check(sourceGroups, IsNil)
 			c.Check(sourceIPs, HasLen, 1)
-			c.Check(sourceIPs, DeepEquals, ec2.SourceIPs("127.0.0.0/24"))
+			c.Check(sourceIPs, DeepEquals, []string{"127.0.0.0/24"})
 		}
 		c.Check(ipperm.Protocol, Equals, "tcp")
 		c.Check(ipperm.FromPort, Equals, 2000)
@@ -609,12 +609,12 @@ func (s *ServerTests) TestDuplicateIPPerm(c *C) {
 		Protocol:  "tcp",
 		FromPort:  200,
 		ToPort:    1024,
-		SourceIPs: ec2.SourceIPs("127.0.0.1/24"),
+		SourceIPs: []string{"127.0.0.1/24"},
 	}, {
 		Protocol:  "tcp",
 		FromPort:  0,
 		ToPort:    100,
-		SourceIPs: ec2.SourceIPs("127.0.0.1/24"),
+		SourceIPs: []string{"127.0.0.1/24"},
 	}}
 
 	_, err = s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: name}, perms[0:1])
@@ -943,7 +943,7 @@ func (s *ServerTests) TestGroupFiltering(c *C) {
 		Protocol:  "tcp",
 		FromPort:  100,
 		ToPort:    200,
-		SourceIPs: ec2.SourceIPs("1.2.3.4/32"),
+		SourceIPs: []string{"1.2.3.4/32"},
 	}}, {{
 		Protocol:     "tcp",
 		FromPort:     200,

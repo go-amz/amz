@@ -178,21 +178,42 @@ func (g *securityGroup) hasPerm(test func(k permKey) bool) bool {
 	return false
 }
 
+// ipPerm describes a security group ingress permission rule the way
+// EC2 API defines it. The only difference between this and ec2.IPPerm
+// is the way SourceIPs get serialized, i.e.
+// <item><cidrIp>1.2.3.4/5</cidrIp></item><item><cidrIp>5.4.3.2/1</cidrIp></item>,
+// as EC2 does, rather than
+// <item><cidrIp>1.2.3.4/5</cidrIp><cidrIp>5.4.3.2/1</cidrIp></item>,
+// as ec2.IPPerm defines. Due to the flexibility of Go's xml package
+// both forms above can be deserialized to the same
+// []string{"1.2.3.4/5", "5.4.3.2/1"} value.
+type ipPerm struct {
+	Protocol     string                  `xml:"ipProtocol"`
+	FromPort     int                     `xml:"fromPort"`
+	ToPort       int                     `xml:"toPort"`
+	SourceIPs    []sourceIP              `xml:"ipRanges>item"`
+	SourceGroups []ec2.UserSecurityGroup `xml:"groups>item"`
+}
+
+type sourceIP struct {
+	CIDRIP string `xml:"cidrIp"`
+}
+
 // ec2Perms returns the list of EC2 permissions granted
 // to g. It groups permissions by port range and protocol.
-func (g *securityGroup) ec2Perms() (perms []ec2.IPPerm) {
+func (g *securityGroup) ec2Perms() (perms []ipPerm) {
 	// The grouping is held in result. We use permKey for convenience,
 	// (ensuring that the ipAddr of each key is zero). For each
 	// protocol/port range combination, we build up the permission set
 	// in the associated value.
-	result := make(map[permKey]*ec2.IPPerm)
+	result := make(map[permKey]*ipPerm)
 	for k := range g.perms {
 		groupKey := k
 		groupKey.ipAddr = ""
 
 		ec2p := result[groupKey]
 		if ec2p == nil {
-			ec2p = &ec2.IPPerm{
+			ec2p = &ipPerm{
 				Protocol: k.protocol,
 				FromPort: k.fromPort,
 				ToPort:   k.toPort,
@@ -205,7 +226,7 @@ func (g *securityGroup) ec2Perms() (perms []ec2.IPPerm) {
 					OwnerId: ownerId,
 				})
 		} else if k.ipAddr != "" {
-			ec2p.SourceIPs = append(ec2p.SourceIPs, ec2.SourceIP{k.ipAddr})
+			ec2p.SourceIPs = append(ec2p.SourceIPs, sourceIP{k.ipAddr})
 		}
 		result[groupKey] = ec2p
 	}
@@ -1237,6 +1258,17 @@ func (srv *Server) describeInstances(w http.ResponseWriter, req *http.Request, r
 	return &resp
 }
 
+// securityGroupInfo is almost the same as ec2.SecurityGroupInfo, but
+// properly serializes IPPerms.SourceIPs. See the ipPerm type for more
+// info.
+type securityGroupInfo struct {
+	ec2.SecurityGroup
+	VPCId       string   `xml:"vpcId"`
+	OwnerId     string   `xml:"ownerId"`
+	Description string   `xml:"groupDescription"`
+	IPPerms     []ipPerm `xml:"ipPermissions>item"`
+}
+
 func (srv *Server) describeSecurityGroups(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	// BUG similar bug to describeInstances, but for GroupName and GroupId
 	srv.mu.Lock()
@@ -1267,15 +1299,16 @@ func (srv *Server) describeSecurityGroups(w http.ResponseWriter, req *http.Reque
 
 	f := newFilter(req.Form)
 	var resp struct {
-		XMLName xml.Name
-		ec2.SecurityGroupsResp
+		XMLName   xml.Name
+		RequestId string              `xml:"requestId"`
+		Groups    []securityGroupInfo `xml:"securityGroupInfo>item"`
 	}
 	resp.XMLName = xml.Name{defaultXMLName, "DescribeSecurityGroupsResponse"}
 	resp.RequestId = reqId
 	for _, group := range groups {
 		ok, err := f.ok(group)
 		if ok {
-			resp.Groups = append(resp.Groups, ec2.SecurityGroupInfo{
+			resp.Groups = append(resp.Groups, securityGroupInfo{
 				OwnerId:       ownerId,
 				SecurityGroup: group.ec2SecurityGroup(),
 				Description:   group.description,
@@ -1430,7 +1463,7 @@ func (srv *Server) parsePerms(req *http.Request) []permKey {
 				if !cidrIpPat.MatchString(val) {
 					fatalf(400, "InvalidParameterValue", "Invalid IP range: %q", val)
 				}
-				ec2p.SourceIPs = append(ec2p.SourceIPs, ec2.SourceIP{val})
+				ec2p.SourceIPs = append(ec2p.SourceIPs, val)
 			default:
 				fatalf(400, "UnknownParameter", "unknown parameter %q", name)
 			}
@@ -1478,7 +1511,7 @@ func (srv *Server) parsePerms(req *http.Request) []permKey {
 		}
 		k.group = nil
 		for _, ip := range p.SourceIPs {
-			k.ipAddr = ip.IP
+			k.ipAddr = ip
 			result = append(result, k)
 		}
 	}
