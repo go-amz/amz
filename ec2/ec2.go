@@ -300,7 +300,7 @@ type Instance struct {
 	AvailZone          string             `xml:"placement>availabilityZone"`
 	AssociatePublicIP  bool               `xml:"associatePublicIpAddress,omitempty"`
 	PlacementGroupName string             `xml:"placement>groupName"`
-	EbsOptimized       bool               `xml:"ebsOptimized,omitempty"`
+	EBSOptimized       bool               `xml:"ebsOptimized,omitempty"`
 	SRIOVNetSupport    bool               `xml:"sriovNetSupport,omitempty"`
 	State              InstanceState      `xml:"instanceState"`
 	Tags               []Tag              `xml:"tagSet>item"`
