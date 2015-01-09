@@ -44,7 +44,7 @@ type CreateVPCResp struct {
 //
 // See http://goo.gl/nkwjvN for more details.
 func (ec2 *EC2) CreateVPC(CIDRBlock, instanceTenancy string) (resp *CreateVPCResp, err error) {
-	params := makeParamsVPC("CreateVpc")
+	params := makeParams("CreateVpc")
 	params["CidrBlock"] = CIDRBlock
 	if instanceTenancy == "" {
 		instanceTenancy = "default"
@@ -66,7 +66,7 @@ func (ec2 *EC2) CreateVPC(CIDRBlock, instanceTenancy string) (resp *CreateVPCRes
 //
 // See http://goo.gl/bcxtbf for more details.
 func (ec2 *EC2) DeleteVPC(id string) (resp *SimpleResp, err error) {
-	params := makeParamsVPC("DeleteVpc")
+	params := makeParams("DeleteVpc")
 	params["VpcId"] = id
 	resp = &SimpleResp{}
 	err = ec2.query(params, resp)
@@ -90,7 +90,7 @@ type VPCsResp struct {
 //
 // See http://goo.gl/Y5kHqG for more details.
 func (ec2 *EC2) VPCs(ids []string, filter *Filter) (resp *VPCsResp, err error) {
-	params := makeParamsVPC("DescribeVpcs")
+	params := makeParams("DescribeVpcs")
 	for i, id := range ids {
 		params["VpcId."+strconv.Itoa(i+1)] = id
 	}

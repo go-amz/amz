@@ -129,11 +129,6 @@ func (s *S) TestRunInstancesExample(c *C) {
 			}},
 		}},
 	}
-	params := ec2.PrepareRunParams(options)
-	c.Assert(params, DeepEquals, map[string]string{
-		"Version": "2013-10-15",
-		"Action":  "RunInstances",
-	})
 	resp, err := s.ec2.RunInstances(&options)
 
 	req := testServer.WaitRequest()
@@ -504,12 +499,12 @@ func (s *S) checkCreateSGResponse(c *C, resp *ec2.CreateSecurityGroupResp, id, n
 
 func (s *S) TestCreateSecurityGroupExample(c *C) {
 	testServer.Response(200, nil, CreateSecurityGroupExample)
-	resp, err := s.ec2.CreateSecurityGroup("websrv", "Web Servers")
+	resp, err := s.ec2.CreateSecurityGroup("", "websrv", "Web Servers")
 	c.Assert(err, IsNil)
 	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "")
 
 	testServer.Response(200, nil, CreateSecurityGroupExample)
-	resp, err = s.ec2.CreateSecurityGroupVPC("vpc-id", "websrv", "Web Servers")
+	resp, err = s.ec2.CreateSecurityGroup("vpc-id", "websrv", "Web Servers")
 	c.Assert(err, IsNil)
 	s.checkCreateSGResponse(c, resp, "sg-67ad940e", "websrv", "Web Servers", "vpc-id")
 }

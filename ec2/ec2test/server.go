@@ -21,6 +21,8 @@ import (
 	"gopkg.in/amz.v1/ec2"
 )
 
+const defaultXMLName = "http://ec2.amazonaws.com/doc/2014-10-01/"
+
 var b64 = base64.StdEncoding
 
 // Action represents a request that changes the ec2 state.
@@ -141,6 +143,10 @@ func (g *securityGroup) matchAttr(attr, value string) (ok bool, err error) {
 		return g.hasPerm(func(k permKey) bool {
 			return k.group != nil && k.group.name == value
 		}), nil
+	case "ip-permission.group-id":
+		return g.hasPerm(func(k permKey) bool {
+			return k.group != nil && k.group.id == value
+		}), nil
 	case "ip-permission.from-port":
 		port, err := strconv.Atoi(value)
 		if err != nil {
@@ -172,38 +178,57 @@ func (g *securityGroup) hasPerm(test func(k permKey) bool) bool {
 	return false
 }
 
+// ipPerm describes a security group ingress permission rule the way
+// EC2 API defines it. The only difference between this and ec2.IPPerm
+// is the way SourceIPs get serialized, i.e.
+// <item><cidrIp>1.2.3.4/5</cidrIp></item><item><cidrIp>5.4.3.2/1</cidrIp></item>,
+// as EC2 does, rather than
+// <item><cidrIp>1.2.3.4/5</cidrIp><cidrIp>5.4.3.2/1</cidrIp></item>,
+// as ec2.IPPerm defines. Due to the flexibility of Go's xml package
+// both forms above can be deserialized to the same
+// []string{"1.2.3.4/5", "5.4.3.2/1"} value.
+type ipPerm struct {
+	Protocol     string                  `xml:"ipProtocol"`
+	FromPort     int                     `xml:"fromPort"`
+	ToPort       int                     `xml:"toPort"`
+	SourceIPs    []sourceIP              `xml:"ipRanges>item"`
+	SourceGroups []ec2.UserSecurityGroup `xml:"groups>item"`
+}
+
+type sourceIP struct {
+	CIDRIP string `xml:"cidrIp"`
+}
+
 // ec2Perms returns the list of EC2 permissions granted
 // to g. It groups permissions by port range and protocol.
-func (g *securityGroup) ec2Perms() (perms []ec2.IPPerm) {
+func (g *securityGroup) ec2Perms() (perms []ipPerm) {
 	// The grouping is held in result. We use permKey for convenience,
-	// (ensuring that the group and ipAddr of each key is zero). For
-	// each protocol/port range combination, we build up the permission
-	// set in the associated value.
-	result := make(map[permKey]*ec2.IPPerm)
+	// (ensuring that the ipAddr of each key is zero). For each
+	// protocol/port range combination, we build up the permission set
+	// in the associated value.
+	result := make(map[permKey]*ipPerm)
 	for k := range g.perms {
 		groupKey := k
-		groupKey.group = nil
 		groupKey.ipAddr = ""
 
 		ec2p := result[groupKey]
 		if ec2p == nil {
-			ec2p = &ec2.IPPerm{
+			ec2p = &ipPerm{
 				Protocol: k.protocol,
 				FromPort: k.fromPort,
 				ToPort:   k.toPort,
 			}
-			result[groupKey] = ec2p
 		}
 		if k.group != nil {
 			ec2p.SourceGroups = append(ec2p.SourceGroups,
 				ec2.UserSecurityGroup{
 					Id:      k.group.id,
-					Name:    k.group.name,
 					OwnerId: ownerId,
 				})
-		} else {
-			ec2p.SourceIPs = append(ec2p.SourceIPs, k.ipAddr)
+		} else if k.ipAddr != "" {
+			ec2p.SourceIPs = append(ec2p.SourceIPs, sourceIP{k.ipAddr})
 		}
+		result[groupKey] = ec2p
 	}
 	for _, ec2p := range result {
 		perms = append(perms, *ec2p)
@@ -367,8 +392,9 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 }
 
 const (
-	ownerId          = "9876"
-	defaultAvailZone = "us-east-1a"
+	ownerId = "9876"
+	// defaultAvailZone is the availability zone to use by default.
+	defaultAvailZone = "us-east-1c"
 )
 
 // newAction allocates a new action and adds it to the
@@ -584,7 +610,9 @@ func writeError(w http.ResponseWriter, err *ec2.Error) {
 // it panics on error. The marshalling should not fail,
 // but we want to know if it does.
 func xmlMarshal(w io.Writer, x interface{}) {
-	if err := xml.NewEncoder(w).Encode(x); err != nil {
+	encoder := xml.NewEncoder(w)
+	encoder.Indent("", "   ")
+	if err := encoder.Encode(x); err != nil {
 		panic(fmt.Errorf("error marshalling %#v: %v", x, err))
 	}
 }
@@ -909,7 +937,11 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 		ifacesToCreate = srv.addDefaultNIC(instSubnet)
 	}
 
-	var resp ec2.RunInstancesResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.RunInstancesResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "RunInstancesResponse"}
 	resp.RequestId = reqId
 	resp.ReservationId = r.id
 	resp.OwnerId = ownerId
@@ -1010,7 +1042,11 @@ func (srv *Server) newReservation(groups []*securityGroup) *reservation {
 func (srv *Server) terminateInstances(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
-	var resp ec2.TerminateInstancesResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.TerminateInstancesResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "TerminateInstancesResponse"}
 	resp.RequestId = reqId
 	var insts []*Instance
 	for attr, vals := range req.Form {
@@ -1141,11 +1177,13 @@ func (srv *Server) createSecurityGroup(w http.ResponseWriter, req *http.Request,
 	// contains SecurityGroup, but the response to this request
 	// should not contain the security group name.
 	type CreateSecurityGroupResponse struct {
+		XMLName   xml.Name
 		RequestId string `xml:"requestId"`
 		Return    bool   `xml:"return"`
 		GroupId   string `xml:"groupId"`
 	}
 	r := &CreateSecurityGroupResponse{
+		XMLName:   xml.Name{defaultXMLName, "CreateSecurityGroupResponse"},
 		RequestId: reqId,
 		Return:    true,
 		GroupId:   g.id,
@@ -1175,7 +1213,11 @@ func (srv *Server) describeInstances(w http.ResponseWriter, req *http.Request, r
 
 	f := newFilter(req.Form)
 
-	var resp ec2.InstancesResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.InstancesResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeInstancesResponse"}
 	resp.RequestId = reqId
 	for _, r := range srv.reservations {
 		var instances []ec2.Instance
@@ -1216,6 +1258,17 @@ func (srv *Server) describeInstances(w http.ResponseWriter, req *http.Request, r
 	return &resp
 }
 
+// securityGroupInfo is almost the same as ec2.SecurityGroupInfo, but
+// properly serializes IPPerms.SourceIPs. See the ipPerm type for more
+// info.
+type securityGroupInfo struct {
+	ec2.SecurityGroup
+	VPCId       string   `xml:"vpcId"`
+	OwnerId     string   `xml:"ownerId"`
+	Description string   `xml:"groupDescription"`
+	IPPerms     []ipPerm `xml:"ipPermissions>item"`
+}
+
 func (srv *Server) describeSecurityGroups(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	// BUG similar bug to describeInstances, but for GroupName and GroupId
 	srv.mu.Lock()
@@ -1245,12 +1298,17 @@ func (srv *Server) describeSecurityGroups(w http.ResponseWriter, req *http.Reque
 	}
 
 	f := newFilter(req.Form)
-	var resp ec2.SecurityGroupsResp
+	var resp struct {
+		XMLName   xml.Name
+		RequestId string              `xml:"requestId"`
+		Groups    []securityGroupInfo `xml:"securityGroupInfo>item"`
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeSecurityGroupsResponse"}
 	resp.RequestId = reqId
 	for _, group := range groups {
 		ok, err := f.ok(group)
 		if ok {
-			resp.Groups = append(resp.Groups, ec2.SecurityGroupInfo{
+			resp.Groups = append(resp.Groups, securityGroupInfo{
 				OwnerId:       ownerId,
 				SecurityGroup: group.ec2SecurityGroup(),
 				Description:   group.description,
@@ -1284,8 +1342,9 @@ func (srv *Server) authorizeSecurityGroupIngress(w http.ResponseWriter, req *htt
 		g.perms[p] = true
 	}
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "AuthorizeSecurityGroupIngressResponse"},
+		XMLName:   xml.Name{defaultXMLName, "AuthorizeSecurityGroupIngressResponse"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
@@ -1307,13 +1366,14 @@ func (srv *Server) revokeSecurityGroupIngress(w http.ResponseWriter, req *http.R
 		delete(g.perms, p)
 	}
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "RevokeSecurityGroupIngressResponse"},
+		XMLName:   xml.Name{defaultXMLName, "RevokeSecurityGroupIngressResponse"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
 var (
-	secGroupPat = regexp.MustCompile(`^sg-[a-z0-9]+$`)
+	secGroupPat = regexp.MustCompile(`^sg-[a-f0-9]+$`)
 	cidrIpPat   = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/([0-9]+)$`)
 	ownerIdPat  = regexp.MustCompile(`^[0-9]+$`)
 )
@@ -1401,7 +1461,7 @@ func (srv *Server) parsePerms(req *http.Request) []permKey {
 			switch rest {
 			case "CidrIp":
 				if !cidrIpPat.MatchString(val) {
-					fatalf(400, "InvalidPermission.Malformed", "Invalid IP range: %q", val)
+					fatalf(400, "InvalidParameterValue", "Invalid IP range: %q", val)
 				}
 				ec2p.SourceIPs = append(ec2p.SourceIPs, val)
 			default:
@@ -1471,7 +1531,7 @@ func (srv *Server) deleteSecurityGroup(w http.ResponseWriter, req *http.Request,
 	for _, r := range srv.reservations {
 		for _, h := range r.groups {
 			if h == g && r.hasRunningMachine() {
-				fatalf(500, "InvalidGroup.InUse", "group is currently in use by a running instance")
+				fatalf(500, "DependencyViolation", "group is currently in use by a running instance")
 			}
 		}
 	}
@@ -1482,15 +1542,16 @@ func (srv *Server) deleteSecurityGroup(w http.ResponseWriter, req *http.Request,
 		}
 		for k := range sg.perms {
 			if k.group == g {
-				fatalf(500, "InvalidGroup.InUse", "group is currently in use by group %q", sg.id)
+				fatalf(500, "DependencyViolation", "group is currently in use by group %q", sg.id)
 			}
 		}
 	}
 
 	delete(srv.groups, g.id)
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "DeleteSecurityGroupResponse"},
+		XMLName:   xml.Name{defaultXMLName, "DeleteSecurityGroupResponse"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
@@ -1526,7 +1587,11 @@ func (srv *Server) describeAvailabilityZones(w http.ResponseWriter, req *http.Re
 	defer srv.mu.Unlock()
 
 	f := newFilter(req.Form)
-	var resp ec2.AvailabilityZonesResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.AvailabilityZonesResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeAvailabilityZonesResponse"}
 	resp.RequestId = reqId
 	for _, zone := range srv.zones {
 		ok, err := f.ok(&zone)
@@ -1556,11 +1621,14 @@ func (srv *Server) createVpc(w http.ResponseWriter, req *http.Request, reqId str
 		InstanceTenancy: tenancy,
 	}}
 	srv.vpcs[v.Id] = v
-	r := &ec2.CreateVPCResp{
-		RequestId: reqId,
-		VPC:       v.VPC,
+	var resp struct {
+		XMLName xml.Name
+		ec2.CreateVPCResp
 	}
-	return r
+	resp.XMLName = xml.Name{defaultXMLName, "CreateVpcResponse"}
+	resp.RequestId = reqId
+	resp.VPC = v.VPC
+	return resp
 }
 
 func (srv *Server) deleteVpc(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
@@ -1570,8 +1638,9 @@ func (srv *Server) deleteVpc(w http.ResponseWriter, req *http.Request, reqId str
 
 	delete(srv.vpcs, v.Id)
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "DeleteVpcResponse"},
+		XMLName:   xml.Name{defaultXMLName, "DeleteVpcResponse"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
@@ -1581,7 +1650,11 @@ func (srv *Server) describeVpcs(w http.ResponseWriter, req *http.Request, reqId 
 
 	idMap := parseIDs(req.Form, "VpcId.")
 	f := newFilter(req.Form)
-	var resp ec2.VPCsResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.VPCsResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeVpcsResponse"}
 	resp.RequestId = reqId
 	for _, v := range srv.vpcs {
 		ok, err := f.ok(v)
@@ -1630,11 +1703,14 @@ func (srv *Server) createSubnet(w http.ResponseWriter, req *http.Request, reqId 
 		AvailableIPCount: availIPs,
 	}}
 	srv.subnets[s.Id] = s
-	r := &ec2.CreateSubnetResp{
-		RequestId: reqId,
-		Subnet:    s.Subnet,
+	var resp struct {
+		XMLName xml.Name
+		ec2.CreateSubnetResp
 	}
-	return r
+	resp.XMLName = xml.Name{defaultXMLName, "CreateSubnetResponse"}
+	resp.RequestId = reqId
+	resp.Subnet = s.Subnet
+	return resp
 }
 
 func (srv *Server) deleteSubnet(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
@@ -1644,8 +1720,9 @@ func (srv *Server) deleteSubnet(w http.ResponseWriter, req *http.Request, reqId 
 
 	delete(srv.subnets, s.Id)
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "DeleteSubnetResponse"},
+		XMLName:   xml.Name{defaultXMLName, "DeleteSubnetResponse"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
@@ -1655,7 +1732,11 @@ func (srv *Server) describeSubnets(w http.ResponseWriter, req *http.Request, req
 
 	idMap := parseIDs(req.Form, "SubnetId.")
 	f := newFilter(req.Form)
-	var resp ec2.SubnetsResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.SubnetsResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeSubnetsResponse"}
 	resp.RequestId = reqId
 	for _, s := range srv.subnets {
 		ok, err := f.ok(s)
@@ -1736,11 +1817,14 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 		PrivateIPs:       privateIPs,
 	}}
 	srv.ifaces[i.Id] = i
-	r := &ec2.CreateNetworkInterfaceResp{
-		RequestId:        reqId,
-		NetworkInterface: i.NetworkInterface,
+	var resp struct {
+		XMLName xml.Name
+		ec2.CreateNetworkInterfaceResp
 	}
-	return r
+	resp.XMLName = xml.Name{defaultXMLName, "CreateNetworkInterfaceResponse"}
+	resp.RequestId = reqId
+	resp.NetworkInterface = i.NetworkInterface
+	return resp
 }
 
 func (srv *Server) deleteIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
@@ -1751,8 +1835,9 @@ func (srv *Server) deleteIFace(w http.ResponseWriter, req *http.Request, reqId s
 
 	delete(srv.ifaces, i.Id)
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "DeleteNetworkInterface"},
+		XMLName:   xml.Name{defaultXMLName, "DeleteNetworkInterfaceResponse"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
@@ -1762,7 +1847,11 @@ func (srv *Server) describeIFaces(w http.ResponseWriter, req *http.Request, reqI
 
 	idMap := parseIDs(req.Form, "NetworkInterfaceId.")
 	f := newFilter(req.Form)
-	var resp ec2.NetworkInterfacesResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.NetworkInterfacesResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeNetworkInterfacesResponse"}
 	resp.RequestId = reqId
 	for _, i := range srv.ifaces {
 		ok, err := f.ok(i)
@@ -1795,11 +1884,14 @@ func (srv *Server) attachIFace(w http.ResponseWriter, req *http.Request, reqId s
 	srv.attachments[a.Id] = a
 	i.Attachment = a.NetworkInterfaceAttachment
 	srv.ifaces[i.Id] = i
-	r := &ec2.AttachNetworkInterfaceResp{
-		RequestId:    reqId,
-		AttachmentId: a.Id,
+	var resp struct {
+		XMLName xml.Name
+		ec2.AttachNetworkInterfaceResp
 	}
-	return r
+	resp.XMLName = xml.Name{defaultXMLName, "AttachNetworkInterfaceResponse"}
+	resp.RequestId = reqId
+	resp.AttachmentId = a.Id
+	return resp
 }
 
 func (srv *Server) detachIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
@@ -1817,8 +1909,9 @@ func (srv *Server) detachIFace(w http.ResponseWriter, req *http.Request, reqId s
 	}
 	delete(srv.attachments, att.Id)
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "DetachNetworkInterface"},
+		XMLName:   xml.Name{defaultXMLName, "DetachNetworkInterfaceResponse"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
@@ -1827,7 +1920,11 @@ func (srv *Server) accountAttributes(w http.ResponseWriter, req *http.Request, r
 	defer srv.mu.Unlock()
 
 	attrsMap := parseIDs(req.Form, "AttributeName.")
-	var resp ec2.AccountAttributesResp
+	var resp struct {
+		XMLName xml.Name
+		ec2.AccountAttributesResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeAccountAttributesResponse"}
 	resp.RequestId = reqId
 	for attrName, _ := range attrsMap {
 		vals, ok := srv.attributes[attrName]
@@ -1856,8 +1953,9 @@ func (srv *Server) assignPrivateIP(w http.ResponseWriter, req *http.Request, req
 		fatalf(400, "InvalidParameterValue", err.Error())
 	}
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "AssignPrivateIpAddresses"},
+		XMLName:   xml.Name{defaultXMLName, "AssignPrivateIpAddresses"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 
@@ -1874,8 +1972,9 @@ func (srv *Server) unassignPrivateIP(w http.ResponseWriter, req *http.Request, r
 		}
 	}
 	return &ec2.SimpleResp{
-		XMLName:   xml.Name{"", "UnassignPrivateIpAddresses"},
+		XMLName:   xml.Name{defaultXMLName, "UnassignPrivateIpAddresses"},
 		RequestId: reqId,
+		Return:    true,
 	}
 }
 

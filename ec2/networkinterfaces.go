@@ -97,7 +97,7 @@ type CreateNetworkInterfaceResp struct {
 //
 // See http://goo.gl/ze3VhA for more details.
 func (ec2 *EC2) CreateNetworkInterface(opts CreateNetworkInterface) (resp *CreateNetworkInterfaceResp, err error) {
-	params := makeParamsVPC("CreateNetworkInterface")
+	params := makeParams("CreateNetworkInterface")
 	params["SubnetId"] = opts.SubnetId
 	for i, ip := range opts.PrivateIPs {
 		prefix := fmt.Sprintf("PrivateIpAddresses.%d.", i+1)
@@ -127,7 +127,7 @@ func (ec2 *EC2) CreateNetworkInterface(opts CreateNetworkInterface) (resp *Creat
 //
 // See http://goo.gl/MC1yOj for more details.
 func (ec2 *EC2) DeleteNetworkInterface(id string) (resp *SimpleResp, err error) {
-	params := makeParamsVPC("DeleteNetworkInterface")
+	params := makeParams("DeleteNetworkInterface")
 	params["NetworkInterfaceId"] = id
 	resp = &SimpleResp{}
 	err = ec2.query(params, resp)
@@ -153,7 +153,7 @@ type NetworkInterfacesResp struct {
 //
 // See http://goo.gl/2LcXtM for more details.
 func (ec2 *EC2) NetworkInterfaces(ids []string, filter *Filter) (resp *NetworkInterfacesResp, err error) {
-	params := makeParamsVPC("DescribeNetworkInterfaces")
+	params := makeParams("DescribeNetworkInterfaces")
 	for i, id := range ids {
 		params["NetworkInterfaceId."+strconv.Itoa(i+1)] = id
 	}
@@ -180,7 +180,7 @@ type AttachNetworkInterfaceResp struct {
 //
 // See http://goo.gl/rEbSii for more details.
 func (ec2 *EC2) AttachNetworkInterface(interfaceId, instanceId string, deviceIndex int) (resp *AttachNetworkInterfaceResp, err error) {
-	params := makeParamsVPC("AttachNetworkInterface")
+	params := makeParams("AttachNetworkInterface")
 	params["NetworkInterfaceId"] = interfaceId
 	params["InstanceId"] = instanceId
 	params["DeviceIndex"] = strconv.Itoa(deviceIndex)
@@ -197,7 +197,7 @@ func (ec2 *EC2) AttachNetworkInterface(interfaceId, instanceId string, deviceInd
 //
 // See http://goo.gl/0Xc1px for more details.
 func (ec2 *EC2) DetachNetworkInterface(attachmentId string, force bool) (resp *SimpleResp, err error) {
-	params := makeParamsVPC("DetachNetworkInterface")
+	params := makeParams("DetachNetworkInterface")
 	params["AttachmentId"] = attachmentId
 	if force {
 		// Force is optional.

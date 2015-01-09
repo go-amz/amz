@@ -202,7 +202,7 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 	subId := subResp.Subnet.Id
 	defer s.deleteSubnets(c, []string{subId})
 
-	sg := s.makeTestGroupVPC(c, vpcId, "vpc-sg-1", "vpc test group1")
+	sg := s.makeTestGroup(c, vpcId, "vpc-sg-1", "vpc test group1")
 	defer s.deleteGroups(c, []ec2.SecurityGroup{sg})
 
 	instList, err := s.ec2.RunInstances(&ec2.RunInstances{

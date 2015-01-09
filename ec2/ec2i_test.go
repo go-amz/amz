@@ -109,13 +109,13 @@ func (s *ClientTests) TestSecurityGroups(c *C) {
 	s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
 	defer s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
 
-	resp1, err := s.ec2.CreateSecurityGroup(name, descr)
+	resp1, err := s.ec2.CreateSecurityGroup("", name, descr)
 	c.Assert(err, IsNil)
 	c.Assert(resp1.RequestId, Matches, ".+")
 	c.Assert(resp1.Name, Equals, name)
 	c.Assert(resp1.Id, Matches, ".+")
 
-	resp1, err = s.ec2.CreateSecurityGroup(name, descr)
+	resp1, err = s.ec2.CreateSecurityGroup("", name, descr)
 	ec2err, _ := err.(*ec2.Error)
 	c.Assert(resp1, IsNil)
 	c.Assert(ec2err, NotNil)
@@ -125,7 +125,7 @@ func (s *ClientTests) TestSecurityGroups(c *C) {
 		Protocol:  "tcp",
 		FromPort:  0,
 		ToPort:    1024,
-		SourceIPs: []string{"127.0.0.1/24"},
+		SourceIPs: []string{"127.0.0.0/24"},
 	}}
 
 	resp2, err := s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: name}, perms)
@@ -144,7 +144,7 @@ func (s *ClientTests) TestSecurityGroups(c *C) {
 	c.Assert(g0.IPPerms[0].Protocol, Equals, "tcp")
 	c.Assert(g0.IPPerms[0].FromPort, Equals, 0)
 	c.Assert(g0.IPPerms[0].ToPort, Equals, 1024)
-	c.Assert(g0.IPPerms[0].SourceIPs, DeepEquals, []string{"127.0.0.1/24"})
+	c.Assert(g0.IPPerms[0].SourceIPs, DeepEquals, []string{"127.0.0.0/24"})
 
 	resp2, err = s.ec2.DeleteSecurityGroup(ec2.SecurityGroup{Name: name})
 	c.Assert(err, IsNil)

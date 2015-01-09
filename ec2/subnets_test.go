@@ -179,6 +179,14 @@ func (s *ServerTests) createSubnet(c *C, vpcId, cidrBlock, availZone string) *ec
 		Total: 2 * time.Minute,
 		Delay: 5 * time.Second,
 	}
+	// Because (as of 2014-10-01) t1.micro and m1.medium instance
+	// types are not available in most us-east-1 availability zones,
+	// except for us-east-1c, we hardcode this here when not set
+	// explicitly in order for those tests using t1.micro/m1.medium to
+	// pass.
+	if availZone == "" {
+		availZone = defaultAvailZone
+	}
 	for a := testAttempt.Start(); a.Next(); {
 		resp, err := s.ec2.CreateSubnet(vpcId, cidrBlock, availZone)
 		if errorCode(err) == "InvalidVpcID.NotFound" {
