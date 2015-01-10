@@ -4,8 +4,7 @@ Contributing to goamz
 We encourage everyone who is familiar with the [Amazon Web Services
 API](http://aws.amazon.com/documentation/) and is willing to support
 and improve the project to become a contributor. Current list of
-official maintainers can be found in the [AUTHORS.md](AUTHORS.md)
-file.
+official maintainers can be found on the [go-amz People](https://github.com/orgs/go-amz/people) list. Current and past contributors list is in the [AUTHORS.md](AUTHORS.md) file.
 
 This file contains instructions and guidelines for contributors.
 
@@ -23,22 +22,42 @@ which covers the most important aspects we expect from contributors:
  * When unsure, ask for help.
  * Step down considerately - if you need to leave the project, minimize disruption.
 
+Ways to contribute
+------------------
+
+There are several ways to contribute to the project:
+
+ * Join the [goamz Google Group](https://groups.google.com/forum/#!forum/goamz) to ask questions and get help.
+ * Report [issues](https://github.com/go-amz/amz/issues/new) you might have. Please, make sure there is no existing [known issue](https://github.com/go-amz/amz/issues) when reporting a new one.
+ * Propose a patch or a bug fix by opening a [pull request](https://help.github.com/articles/creating-a-pull-request/). Check GitHub help on [how to collaborate](https://help.github.com/categories/collaborating/).
+ * Give feedback for [known issues](https://github.com/go-amz/amz/issues/) or proposed [pull requests](https://github.com/go-amz/amz/pulls).
+
+For some of those things you will need a [GitHub account](https://github.com/signup/free), if you don't have one.
+
 Contributing a patch
 --------------------
 
 Found a bug or want to suggest an improvement?
 Great! Here are the steps anyone can follow to propose a bug fix or patch.
 
- * You need a [GitHub account](https://github.com/signup/free) if you don't have one.
  * [Fork](https://help.github.com/articles/fork-a-repo/) the go-amz/amz repository.
- * If you found a bug, please check the existing [issues](https://github.com/go-amz/amz/issues) to see if it's a known problem. Otherwise, [open a new issue](https://github.com/go-amz/amz/issues/new) for it.
- * Clone your forked repository locally.
- * Switch to the `v1` branch.
- * Create a feature branch for your contribution.
- * Be sure to test your code changes.
+ * If you think you found a bug, please check the existing [issues](https://github.com/go-amz/amz/issues) to see if it's a known problem. Otherwise, [open a new issue](https://github.com/go-amz/amz/issues/new) for it.
+ * Clone your forked repository locally:
+```
+$ git clone https://github.com/<your-github-username>/amz
+```
+ * For the unit tests, you will need [gocheck](https://github.com/go-check/check):
+```
+$ go get gopkg.in/check.v1
+```
+ * Create a feature branch for your contribution. Make your changes there. It's recommended to try keeping your changes as small as possible. Split bigger changes in several pull request to make the code review easier.
+ * Be sure to write tests for your code changes and run them before proposing:
+```
+$ go test -gocheck.v
+```
  * Push your feature branch to your fork.
  * Open a pull request with a description of your change.
- * Ask a maintainer for a code review.
+ * A maintainer should notice your pull request and do a code review. You can also ask a [maintainer](https://github.com/orgs/go-amz/people) for review.
  * Reply to comments, fix issues, push your changes. Depending on the size of the patch, this process can be repeated a few times.
  * Once you get an approval and the CI tests pass, ask a maintainer to merge your patch.
 
@@ -52,7 +71,8 @@ help, please consider following the following procedure.
 
  * You need a [GitHub account](https://github.com/signup/free) if you don't have one.
  * Review and sign the Canonical [Contributor License Agreement](http://www.ubuntu.com/legal/contributors/). You might find the [CLA FAQ](http://www.ubuntu.com/legal/contributors/licence-agreement-faq) page useful.
- * Request to become a maintainer by contacting one or more people in [AUTHORS.md](AUTHORS.md).
+ * Request to become a maintainer by contacting the [existing maintainers](https://github.com/orgs/go-amz/people).
+ * You're welcome to add your name to the [AUTHORS.md](AUTHORS.md) list once approved.
 
 General guidelines
 ------------------
@@ -63,10 +83,11 @@ reasonable and considerate and please ask for help, if something is
 not clear.
 
  * Commit early, commit often.
- * Before pushing your changes for the first time, use `git rebase -i v1` to minimize merge conflicts. Do not use `git pull v1`, use `git fetch` instead to avoid merging.
- * Rebase and squash small, yet unpushed changes. Let's keep the commit log cleaner. 
- * Do not rebase commits you already pushed, even when in your own fork. Others might depend on them.
+ * Use `git rebase` before proposing your changes to squash minor commits. Let's keep the commit log cleaner.
+ * **Do not** rebase commits you already pushed, even when in your own fork. Others might depend on them.
  * Write new tests and update existing ones when changing the code. All changes should have tests, when possible.
  * Use `go fmt` to format your code before pushing.
  * Document exported types, functions, etc. See the excellent [Effective Go](http://golang.org/doc/effective_go.html) style guide, which we use.
  * When reporting issues, provide the necessary information to reproduce the issue.
+
+Thanks for your interest in goamz!
