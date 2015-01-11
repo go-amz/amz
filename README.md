@@ -3,7 +3,8 @@ goamz
 
 Go package to interact with Amazon Web Services
 
-[![Build Status](https://travis-ci.org/go-amz/amz.svg)](https://travis-ci.org/go-amz/amz) [![GoDoc](https://godoc.org/gopkg.in/amz.v1?status.png)](http://godoc.org/gopkg.in/amz.v1)
+[![Build Status](https://travis-ci.org/go-amz/amz.svg?branch=v1)](https://travis-ci.org/go-amz/amz)
+[![GoDoc](https://godoc.org/gopkg.in/amz.v1?status.png)](http://godoc.org/gopkg.in/amz.v1)
 
 Instructions
 ------------
