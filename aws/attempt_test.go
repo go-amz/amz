@@ -5,7 +5,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v2/aws"
 )
 
 func (S) TestAttemptTiming(c *C) {
