@@ -1,7 +1,7 @@
 package s3
 
 import (
-	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v2/aws"
 )
 
 var originalStrategy = attempts

@@ -5,7 +5,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v2/aws"
 )
 
 // Amazon must be used by all tested packages to determine whether to

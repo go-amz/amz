@@ -5,7 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 
-	"gopkg.in/amz.v1/aws"
+	"gopkg.in/amz.v2/aws"
 )
 
 var b64 = base64.StdEncoding

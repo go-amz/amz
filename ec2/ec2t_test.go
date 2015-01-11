@@ -9,10 +9,10 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v1/aws"
-	"gopkg.in/amz.v1/ec2"
-	"gopkg.in/amz.v1/ec2/ec2test"
-	"gopkg.in/amz.v1/testutil"
+	"gopkg.in/amz.v2/aws"
+	"gopkg.in/amz.v2/ec2"
+	"gopkg.in/amz.v2/ec2/ec2test"
+	"gopkg.in/amz.v2/testutil"
 )
 
 // defaultAvailZone is the availability zone to use by default when
