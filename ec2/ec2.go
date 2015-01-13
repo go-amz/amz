@@ -282,30 +282,42 @@ type RunInstancesResp struct {
 //
 // See http://goo.gl/OCH8a for more details.
 type Instance struct {
-	InstanceId         string             `xml:"instanceId"`
-	InstanceType       string             `xml:"instanceType"`
-	ImageId            string             `xml:"imageId"`
-	PrivateDNSName     string             `xml:"privateDnsName"`
-	DNSName            string             `xml:"dnsName"`
-	IPAddress          string             `xml:"ipAddress"`
-	PrivateIPAddress   string             `xml:"privateIpAddress"`
-	SubnetId           string             `xml:"subnetId"`
-	VPCId              string             `xml:"vpcId"`
-	SourceDestCheck    bool               `xml:"sourceDestCheck"`
-	KeyName            string             `xml:"keyName"`
-	AMILaunchIndex     int                `xml:"amiLaunchIndex"`
-	Hypervisor         string             `xml:"hypervisor"`
-	VirtType           string             `xml:"virtualizationType"`
-	Monitoring         string             `xml:"monitoring>state"`
-	AvailZone          string             `xml:"placement>availabilityZone"`
-	AssociatePublicIP  bool               `xml:"associatePublicIpAddress,omitempty"`
-	PlacementGroupName string             `xml:"placement>groupName"`
-	EBSOptimized       bool               `xml:"ebsOptimized,omitempty"`
-	SRIOVNetSupport    bool               `xml:"sriovNetSupport,omitempty"`
-	State              InstanceState      `xml:"instanceState"`
-	Tags               []Tag              `xml:"tagSet>item"`
-	SecurityGroups     []SecurityGroup    `xml:"groupSet>item"`
-	NetworkInterfaces  []NetworkInterface `xml:"networkInterfaceSet>item"`
+	InstanceId          string                       `xml:"instanceId"`
+	InstanceType        string                       `xml:"instanceType"`
+	ImageId             string                       `xml:"imageId"`
+	PrivateDNSName      string                       `xml:"privateDnsName"`
+	DNSName             string                       `xml:"dnsName"`
+	IPAddress           string                       `xml:"ipAddress"`
+	PrivateIPAddress    string                       `xml:"privateIpAddress"`
+	SubnetId            string                       `xml:"subnetId"`
+	VPCId               string                       `xml:"vpcId"`
+	SourceDestCheck     bool                         `xml:"sourceDestCheck"`
+	KeyName             string                       `xml:"keyName"`
+	AMILaunchIndex      int                          `xml:"amiLaunchIndex"`
+	Hypervisor          string                       `xml:"hypervisor"`
+	VirtType            string                       `xml:"virtualizationType"`
+	Monitoring          string                       `xml:"monitoring>state"`
+	AvailZone           string                       `xml:"placement>availabilityZone"`
+	AssociatePublicIP   bool                         `xml:"associatePublicIpAddress,omitempty"`
+	PlacementGroupName  string                       `xml:"placement>groupName"`
+	EBSOptimized        bool                         `xml:"ebsOptimized,omitempty"`
+	SRIOVNetSupport     bool                         `xml:"sriovNetSupport,omitempty"`
+	State               InstanceState                `xml:"instanceState"`
+	Tags                []Tag                        `xml:"tagSet>item"`
+	SecurityGroups      []SecurityGroup              `xml:"groupSet>item"`
+	NetworkInterfaces   []NetworkInterface           `xml:"networkInterfaceSet>item"`
+	BlockDeviceMappings []InstanceBlockDeviceMapping `xml:"blockDeviceMapping>item"`
+}
+
+// InstanceBlockDeviceMapping describes a block device mapping.
+//
+// See http://goo.gl/Ua0BIw for more details.
+type InstanceBlockDeviceMapping struct {
+	DeviceName          string `xml:"deviceName"`
+	AttachTime          string `xml:"ebs>attachTime"`
+	DeleteOnTermination bool   `xml:"ebs>deleteOnTermination"`
+	Status              string `xml:"ebs>status"`
+	VolumeId            string `xml:"ebs>volumeId"`
 }
 
 // RunInstances starts new instances in EC2.

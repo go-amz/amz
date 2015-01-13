@@ -69,6 +69,7 @@ type Server struct {
 	subnetId             counter
 	ifaceId              counter
 	attachId             counter
+	volumeId             counter
 	initialInstanceState ec2.InstanceState
 }
 
@@ -81,19 +82,22 @@ type reservation struct {
 
 // instance holds a simulated ec2 instance
 type Instance struct {
-	seq        int
-	dnsNameSet bool
+	seq int
+	// first is set to true until the instance has been marshaled
+	// into a response at least once.
+	first bool
 	// UserData holds the data that was passed to the RunInstances request
 	// when the instance was started.
-	UserData    []byte
-	imageId     string
-	reservation *reservation
-	instType    string
-	availZone   string
-	state       ec2.InstanceState
-	subnetId    string
-	vpcId       string
-	ifaces      []ec2.NetworkInterface
+	UserData            []byte
+	imageId             string
+	reservation         *reservation
+	instType            string
+	availZone           string
+	state               ec2.InstanceState
+	subnetId            string
+	vpcId               string
+	ifaces              []ec2.NetworkInterface
+	blockDeviceMappings []ec2.InstanceBlockDeviceMapping
 }
 
 // permKey represents permission for a given security
@@ -867,6 +871,71 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 	return createdNICs
 }
 
+// parseBlockDeviceMappings parses and returns any BlockDeviceMapping
+// parameters passed to RunInstances.
+func (srv *Server) parseBlockDeviceMappings(req *http.Request) []ec2.BlockDeviceMapping {
+	mappings := []ec2.BlockDeviceMapping{}
+	for attr, vals := range req.Form {
+		if !strings.HasPrefix(attr, "BlockDeviceMapping.") {
+			continue
+		}
+		fields := strings.SplitN(attr, ".", 3)
+		if len(fields) < 3 || len(vals) != 1 {
+			fatalf(400, "InvalidParameterValue", "bad param %q: %v", attr, vals)
+		}
+		index := atoi(fields[1]) - 1
+		// Field name format: BlockDeviceMapping.<index>.<fieldName>....
+		for len(mappings)-1 < index {
+			mappings = append(mappings, ec2.BlockDeviceMapping{})
+		}
+		mapping := mappings[index]
+		fieldName := fields[2]
+		switch fieldName {
+		case "DeviceName":
+			mapping.DeviceName = vals[0]
+		case "VirtualName":
+			mapping.VirtualName = vals[0]
+		case "Ebs.SnapshotId":
+			mapping.SnapshotId = vals[0]
+		case "Ebs.VolumeType":
+			mapping.VolumeType = vals[0]
+		case "Ebs.VolumeSize":
+			mapping.VolumeSize = int64(atoi(vals[0]))
+		case "Ebs.Iops":
+			mapping.IOPS = int64(atoi(vals[0]))
+		case "Ebs.DeleteOnTermination":
+			val, err := strconv.ParseBool(vals[0])
+			if err != nil {
+				fatalf(400, "InvalidParameterValue", "bad flag %s: %s", fieldName, vals[0])
+			}
+			mapping.DeleteOnTermination = val
+		default:
+			fatalf(400, "InvalidParameterValue", "unknown field %s: %s", fieldName, vals[0])
+		}
+		mappings[index] = mapping
+	}
+	return mappings
+}
+
+func (srv *Server) createBlockDeviceMappingsOnRun(instId string, mappings []ec2.BlockDeviceMapping) []ec2.InstanceBlockDeviceMapping {
+	results := make([]ec2.InstanceBlockDeviceMapping, 0, len(mappings))
+	for _, mapping := range mappings {
+		if mapping.VirtualName != "" {
+			// ephemeral block devices are attached, but do not
+			// show up in block device mappings in responses.
+			continue
+		}
+		results = append(results, ec2.InstanceBlockDeviceMapping{
+			DeviceName:          mapping.DeviceName,
+			VolumeId:            fmt.Sprintf("vol-%v", srv.volumeId.next()),
+			AttachTime:          time.Now().Format(time.RFC3339),
+			Status:              "attached",
+			DeleteOnTermination: mapping.DeleteOnTermination,
+		})
+	}
+	return results
+}
+
 // runInstances implements the EC2 RunInstances entry point.
 func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	min := atoi(req.Form.Get("MinCount"))
@@ -937,6 +1006,9 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 		ifacesToCreate = srv.addDefaultNIC(instSubnet)
 	}
 
+	// Handle block device mappings.
+	blockDeviceMappings := srv.parseBlockDeviceMappings(req)
+
 	var resp struct {
 		XMLName xml.Name
 		ec2.RunInstancesResp
@@ -956,6 +1028,9 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 			inst.vpcId = instSubnet.VPCId
 		}
 		inst.UserData = userData
+		inst.blockDeviceMappings = srv.createBlockDeviceMappingsOnRun(
+			inst.id(), blockDeviceMappings,
+		)
 		resp.Instances = append(resp.Instances, inst.ec2instance())
 	}
 	return &resp
@@ -1016,6 +1091,7 @@ func (srv *Server) NewInstances(n int, instType string, imageId string, state ec
 func (srv *Server) newInstance(r *reservation, instType string, imageId string, availZone string, state ec2.InstanceState) *Instance {
 	inst := &Instance{
 		seq:         srv.maxId.next(),
+		first:       true,
 		instType:    instType,
 		imageId:     imageId,
 		availZone:   availZone,
@@ -1080,26 +1156,30 @@ func (inst *Instance) terminate() (d ec2.InstanceStateChange) {
 func (inst *Instance) ec2instance() ec2.Instance {
 	id := inst.id()
 	// The first time the instance is returned, its DNSName
-	// will be empty. The client should then refresh the instance.
+	// and block device mappings will be empty. The client
+	// should then refresh the instance.
 	var dnsName string
-	if inst.dnsNameSet {
-		dnsName = fmt.Sprintf("%s.testing.invalid", id)
+	var blockDeviceMappings []ec2.InstanceBlockDeviceMapping
+	if inst.first {
+		inst.first = false
 	} else {
-		inst.dnsNameSet = true
+		dnsName = fmt.Sprintf("%s.testing.invalid", id)
+		blockDeviceMappings = inst.blockDeviceMappings
 	}
 	return ec2.Instance{
-		InstanceId:        id,
-		InstanceType:      inst.instType,
-		ImageId:           inst.imageId,
-		DNSName:           dnsName,
-		PrivateDNSName:    fmt.Sprintf("%s.internal.invalid", id),
-		IPAddress:         fmt.Sprintf("8.0.0.%d", inst.seq%256),
-		PrivateIPAddress:  fmt.Sprintf("127.0.0.%d", inst.seq%256),
-		State:             inst.state,
-		AvailZone:         inst.availZone,
-		VPCId:             inst.vpcId,
-		SubnetId:          inst.subnetId,
-		NetworkInterfaces: inst.ifaces,
+		InstanceId:          id,
+		InstanceType:        inst.instType,
+		ImageId:             inst.imageId,
+		DNSName:             dnsName,
+		PrivateDNSName:      fmt.Sprintf("%s.internal.invalid", id),
+		IPAddress:           fmt.Sprintf("8.0.0.%d", inst.seq%256),
+		PrivateIPAddress:    fmt.Sprintf("127.0.0.%d", inst.seq%256),
+		State:               inst.state,
+		AvailZone:           inst.availZone,
+		VPCId:               inst.vpcId,
+		SubnetId:            inst.subnetId,
+		NetworkInterfaces:   inst.ifaces,
+		BlockDeviceMappings: blockDeviceMappings,
 		// TODO the rest
 	}
 }
