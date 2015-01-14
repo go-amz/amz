@@ -385,6 +385,7 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"CreateSubnet":                  (*Server).createSubnet,
 	"DeleteSubnet":                  (*Server).deleteSubnet,
 	"DescribeSubnets":               (*Server).describeSubnets,
+	"ModifySubnetAttribute":         (*Server).modifySubnetAttribute,
 	"CreateNetworkInterface":        (*Server).createIFace,
 	"DeleteNetworkInterface":        (*Server).deleteIFace,
 	"DescribeNetworkInterfaces":     (*Server).describeIFaces,
@@ -1828,6 +1829,26 @@ func (srv *Server) describeSubnets(w http.ResponseWriter, req *http.Request, req
 		}
 	}
 	return &resp
+}
+
+func (srv *Server) modifySubnetAttribute(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	id := req.Form.Get("SubnetId")
+	s := srv.subnet(id)
+	mapIp := strings.ToLower(req.Form.Get("MapPublicIpOnLaunch.Value")) == "true"
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	if s == nil {
+		fatalf(400, "InvalidSubnetID.NotFound", "no such subnet %v", id)
+	}
+	s.MapPublicIPOnLaunch = mapIp
+	srv.subnets[id] = s
+
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{defaultXMLName, "ModifySubnetAttributeResponse"},
+		RequestId: reqId,
+		Return:    true,
+	}
 }
 
 func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
