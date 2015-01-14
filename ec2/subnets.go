@@ -107,3 +107,25 @@ func (ec2 *EC2) Subnets(ids []string, filter *Filter) (resp *SubnetsResp, err er
 	}
 	return resp, nil
 }
+
+// ModifySubnetAttribute modifies an attribute of an existing subnet.
+// The only supported attribute is the "MapPublicIpOnLaunch" flag,
+// which is true by default for default subnets (of the default VPC)
+// and false for non-default subnets. When set to "true", the flag
+// causes new instances launched into the subnet, and having a single
+// network interface with device index 0, to receive an automatic
+// public IP address mapped to the instance's primary private IP
+// address.
+//
+// See http://goo.gl/jNNAJe for more details.
+func (ec2 *EC2) ModifySubnetAttribute(id, attrName, attrValue string) (resp *SimpleResp, err error) {
+	params := makeParams("ModifySubnetAttribute")
+	params["SubnetId"] = id
+	params[attrName+".Value"] = attrValue
+	resp = &SimpleResp{}
+	err = ec2.query(params, resp)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
