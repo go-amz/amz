@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/amz.v2/aws"
+	"gopkg.in/amz.v3-unstable/aws"
 )
 
 var b64 = base64.StdEncoding

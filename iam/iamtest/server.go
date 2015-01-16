@@ -12,7 +12,7 @@ import (
 	"strings"
 	"sync"
 
-	"gopkg.in/amz.v2/iam"
+	"gopkg.in/amz.v3-unstable/iam"
 )
 
 type action struct {

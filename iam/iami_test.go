@@ -5,9 +5,9 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v2/aws"
-	"gopkg.in/amz.v2/iam"
-	"gopkg.in/amz.v2/testutil"
+	"gopkg.in/amz.v3-unstable/aws"
+	"gopkg.in/amz.v3-unstable/iam"
+	"gopkg.in/amz.v3-unstable/testutil"
 )
 
 // AmazonServer represents an Amazon AWS server.
