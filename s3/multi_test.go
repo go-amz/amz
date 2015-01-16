@@ -8,7 +8,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v2/s3"
+	"gopkg.in/amz.v3-unstable/s3"
 )
 
 func (s *S) TestInitMulti(c *C) {

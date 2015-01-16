@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/amz.v2/aws"
+	"gopkg.in/amz.v3-unstable/aws"
 )
 
 const debug = false

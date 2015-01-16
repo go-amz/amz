@@ -3,8 +3,8 @@ package s3_test
 import (
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v2/aws"
-	"gopkg.in/amz.v2/s3"
+	"gopkg.in/amz.v3-unstable/aws"
+	"gopkg.in/amz.v3-unstable/s3"
 )
 
 // S3 ReST authentication docs: http://goo.gl/G1LrK
