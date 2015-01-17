@@ -527,6 +527,7 @@ func (s *ServerTests) TestIPPerms(c *C) {
 			// Only source IPs should exist.
 			c.Check(sourceGroups, IsNil)
 			c.Check(sourceIPs, HasLen, 2)
+			sort.Strings(sourceIPs)
 			c.Check(sourceIPs, DeepEquals, []string{"127.0.0.0/24", "200.1.1.34/32"})
 		}
 		c.Check(ipperm.Protocol, Equals, "tcp")
