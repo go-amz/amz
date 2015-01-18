@@ -5,7 +5,7 @@ Go package to interact with Amazon Web Services
 
 [![Build Status](https://travis-ci.org/go-amz/amz.svg?branch=v3-unstable)](https://travis-ci.org/go-amz/amz) [![GoDoc](https://godoc.org/gopkg.in/amz.v3-unstable?status.png)](http://godoc.org/gopkg.in/amz.v3-unstable)
 
-**NOTE** This is an *unstable* development branch. Please, do not use it for production code.
+**NOTE**: This is an *unstable* development branch. Please, do not use it for production code. Instead, use [**v1**](https://github.com/go-amz/amz/tree/v1) or [**v2**](https://github.com/go-amz/amz/tree/v2) branches.
 
 Instructions
 ------------
