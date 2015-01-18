@@ -28,7 +28,8 @@ Ways to contribute
 There are several ways to contribute to the project:
 
  * Join the [goamz Google Group](https://groups.google.com/forum/#!forum/goamz) to ask questions and get help.
- * Report [issues](https://github.com/go-amz/amz/issues/new) you might have. Please, make sure there is no existing [known issue](https://github.com/go-amz/amz/issues) when reporting a new one.
+ * Report [issues](https://github.com/go-amz/amz/issues/new) you might have.
+ * Please, make sure there is no existing [known issue](https://github.com/go-amz/amz/issues) when reporting a new one.
  * Propose a patch or a bug fix by opening a [pull request](https://help.github.com/articles/creating-a-pull-request/). Check GitHub help on [how to collaborate](https://help.github.com/categories/collaborating/).
  * Give feedback for [known issues](https://github.com/go-amz/amz/issues/) or proposed [pull requests](https://github.com/go-amz/amz/pulls).
 
@@ -41,7 +42,8 @@ Found a bug or want to suggest an improvement?
 Great! Here are the steps anyone can follow to propose a bug fix or patch.
 
  * [Fork](https://help.github.com/articles/fork-a-repo/) the go-amz/amz repository.
- * If you think you found a bug, please check the existing [issues](https://github.com/go-amz/amz/issues) to see if it's a known problem. Otherwise, [open a new issue](https://github.com/go-amz/amz/issues/new) for it.
+ * If you think you found a bug, please check the existing [issues](https://github.com/go-amz/amz/issues) to see if it's a known problem.
+ * Otherwise, [open a new issue](https://github.com/go-amz/amz/issues/new) for it.
  * Clone your forked repository locally:
 ```
 $ git clone https://github.com/<your-github-username>/amz
