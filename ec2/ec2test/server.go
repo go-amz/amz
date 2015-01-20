@@ -292,9 +292,7 @@ type iface struct {
 
 func (i *iface) matchAttr(attr, value string) (ok bool, err error) {
 	notImplemented := []string{
-		"addresses.", "association.", "tag", "requester-",
-		"attachment.", "source-dest-check", "mac-address",
-		"group-", "description", "private-", "owner-id",
+		"addresses.association.", "association.", "tag", "requester-",
 	}
 	switch attr {
 	case "availability-zone":
@@ -307,6 +305,84 @@ func (i *iface) matchAttr(attr, value string) (ok bool, err error) {
 		return i.SubnetId == value, nil
 	case "vpc-id":
 		return i.VPCId == value, nil
+	case "attachment.attachment-id":
+		return i.Attachment.Id == value, nil
+	case "attachment.instance-id":
+		return i.Attachment.InstanceId == value, nil
+	case "attachment.instance-owner-id":
+		return i.Attachment.InstanceOwnerId == value, nil
+	case "attachment.device-index":
+		devIndex, err := strconv.Atoi(value)
+		if err != nil {
+			return false, err
+		}
+		return i.Attachment.DeviceIndex == devIndex, nil
+	case "attachment.status":
+		return i.Attachment.Status == value, nil
+	case "attachment.attach-time":
+		return i.Attachment.AttachTime == value, nil
+	case "attachment.delete-on-termination":
+		flag, err := strconv.ParseBool(value)
+		if err != nil {
+			return false, err
+		}
+		// EC2 only filters attached NICs here, as the flag defaults
+		// to false for manually created NICs and to true for
+		// automatically created ones (during RunInstances)
+		if i.Attachment.Id == "" {
+			return false, nil
+		}
+		return i.Attachment.DeleteOnTermination == flag, nil
+	case "owner-id":
+		return i.OwnerId == value, nil
+	case "source-dest-check":
+		flag, err := strconv.ParseBool(value)
+		if err != nil {
+			return false, err
+		}
+		return i.SourceDestCheck == flag, nil
+	case "description":
+		return i.Description == value, nil
+	case "private-dns-name":
+		return i.PrivateDNSName == value, nil
+	case "mac-address":
+		return i.MACAddress == value, nil
+	case "private-ip-address", "addresses.private-ip-address":
+		if i.PrivateIPAddress == value {
+			return true, nil
+		}
+		// Look inside the secondary IPs list.
+		for _, ip := range i.PrivateIPs {
+			if ip.Address == value {
+				return true, nil
+			}
+		}
+		return false, nil
+	case "addresses.primary":
+		flag, err := strconv.ParseBool(value)
+		if err != nil {
+			return false, err
+		}
+		for _, ip := range i.PrivateIPs {
+			if ip.IsPrimary == flag {
+				return true, nil
+			}
+		}
+		return false, nil
+	case "group-id":
+		for _, group := range i.Groups {
+			if group.Id == value {
+				return true, nil
+			}
+		}
+		return false, nil
+	case "group-name":
+		for _, group := range i.Groups {
+			if group.Name == value {
+				return true, nil
+			}
+		}
+		return false, nil
 	default:
 		for _, item := range notImplemented {
 			if strings.HasPrefix(attr, item) {
@@ -1913,6 +1989,7 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 		Status:           "available",
 		MACAddress:       fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId),
 		PrivateIPAddress: primaryIP,
+		PrivateDNSName:   fmt.Sprintf("internal-%s.invalid", strings.Replace(primaryIP, ".", "-", -1)),
 		SourceDestCheck:  true,
 		Groups:           groups,
 		PrivateIPs:       privateIPs,
@@ -1947,6 +2024,11 @@ func (srv *Server) describeIFaces(w http.ResponseWriter, req *http.Request, reqI
 	defer srv.mu.Unlock()
 
 	idMap := parseIDs(req.Form, "NetworkInterfaceId.")
+	for id, _ := range idMap {
+		if _, known := srv.ifaces[id]; !known {
+			fatalf(400, "InvalidNetworkInterfaceID.NotFound", "no such NIC %v", id)
+		}
+	}
 	f := newFilter(req.Form)
 	var resp struct {
 		XMLName xml.Name
@@ -1955,12 +2037,13 @@ func (srv *Server) describeIFaces(w http.ResponseWriter, req *http.Request, reqI
 	resp.XMLName = xml.Name{defaultXMLName, "DescribeNetworkInterfacesResponse"}
 	resp.RequestId = reqId
 	for _, i := range srv.ifaces {
-		ok, err := f.ok(i)
-		_, known := idMap[i.Id]
-		if ok && (len(idMap) == 0 || known) {
-			resp.Interfaces = append(resp.Interfaces, i.NetworkInterface)
-		} else if err != nil {
+		filterMatch, err := f.ok(i)
+		if err != nil {
 			fatalf(400, "InvalidParameterValue", "describe ifaces: %v", err)
+		}
+		if filterMatch && (len(idMap) == 0 || idMap[i.Id]) {
+			// filter.ok() returns true when the filter is empty.
+			resp.Interfaces = append(resp.Interfaces, i.NetworkInterface)
 		}
 	}
 	return &resp
@@ -1978,12 +2061,13 @@ func (srv *Server) attachIFace(w http.ResponseWriter, req *http.Request, reqId s
 		InstanceId:          inst.id(),
 		InstanceOwnerId:     ownerId,
 		DeviceIndex:         devIndex,
-		Status:              "in-use",
+		Status:              "attached",
 		AttachTime:          time.Now().Format(time.RFC3339),
-		DeleteOnTermination: true,
+		DeleteOnTermination: false, // false for manually created NICs
 	}}
 	srv.attachments[a.Id] = a
 	i.Attachment = a.NetworkInterfaceAttachment
+	i.Status = "in-use"
 	srv.ifaces[i.Id] = i
 	var resp struct {
 		XMLName xml.Name

@@ -193,53 +193,234 @@ func (s *S) TestDetachNetworkInterfaceExample(c *C) {
 // live on EC2.
 
 func (s *ServerTests) TestNetworkInterfaces(c *C) {
+	// This tests CreateNetworkInterface, DeleteNetworkInterface,
+	// AttachNetworkInterface, DetachNetworkInterface, and basic
+	// retrieval using NetworkInterfaces. Filtering is tested
+	// separately.
+	results := s.prepareNetworkInterfaces(c)
+	results.cleanup()
+}
+
+func (s *ServerTests) TestNetworkInterfacesFiltering(c *C) {
+	// Test all filters supported by both Amazon and ec2test server.
+	prep := s.prepareNetworkInterfaces(c)
+	defer prep.cleanup()
+
+	type filterTest struct {
+		about      string
+		ids        []string     // ids argument to NetworkInterfaces method.
+		filters    []filterSpec // filters argument to NetworkInterfaces method.
+		resultIds  []string     // expected ids of the results.
+		allowExtra bool         // specified results may be incomplete.
+		err        string       // expected error.
+	}
+	nicIds := func(ids ...int) []string {
+		var resultIds []string
+		for _, id := range ids {
+			switch id {
+			case 1:
+				resultIds = append(resultIds, prep.nicId1)
+			case 2:
+				resultIds = append(resultIds, prep.nicId2)
+			}
+		}
+		return resultIds
+	}
+	filterCheck := func(name, val string, resultIds []string) filterTest {
+		return filterTest{
+			about:      "filter check " + name + " = " + val,
+			filters:    []filterSpec{{name, []string{val}}},
+			resultIds:  resultIds,
+			allowExtra: true,
+		}
+	}
+	tests := []filterTest{{
+		about:      "no ids or filters returns all NICs",
+		resultIds:  nicIds(1, 2),
+		allowExtra: true,
+	}, {
+		about:     "two specified ids returns only them",
+		ids:       nicIds(1, 2),
+		resultIds: nicIds(1, 2),
+	}, {
+		about: "non-existent NIC id gives an error",
+		ids:   []string{"eni-dddddddd"},
+		err:   `.*\(InvalidNetworkInterfaceID\.NotFound\)`,
+	}, {
+		about:     "filter by network-interface-id with both ids",
+		filters:   []filterSpec{{"network-interface-id", nicIds(1, 2)}},
+		resultIds: nicIds(1, 2),
+	}, {
+		about:     "previous filter and ids gives the same result",
+		ids:       nicIds(1, 2),
+		filters:   []filterSpec{{"network-interface-id", nicIds(1, 2)}},
+		resultIds: nicIds(1, 2),
+	}, {
+		about:   "filter by one id and specify another id in the list - no results",
+		ids:     nicIds(1),
+		filters: []filterSpec{{"network-interface-id", nicIds(2)}},
+	}, {
+		about: "combination filters: first NIC by description and id",
+		filters: []filterSpec{
+			{"description", []string{"My first iface"}},
+			{"network-interface-id", nicIds(1)},
+		},
+		resultIds: nicIds(1),
+	}, {
+		about: "combination filters: both NICs by MAC address",
+		filters: []filterSpec{
+			{"mac-address", []string{prep.nic1MAC, prep.nic2MAC}},
+		},
+		resultIds: nicIds(1, 2),
+	}, {
+		about:   "filter by bogus private-dns-name - no results",
+		filters: []filterSpec{{"private-dns-name", []string{"invalid"}}},
+	},
+		filterCheck("availability-zone", prep.availZone, nicIds(1, 2)),
+		filterCheck("subnet-id", prep.subId, nicIds(1, 2)),
+		filterCheck("vpc-id", prep.vpcId, nicIds(1, 2)),
+		filterCheck("owner-id", prep.ownerId, nicIds(1, 2)),
+		filterCheck("network-interface-id", prep.nicId1, nicIds(1)),
+		filterCheck("status", "in-use", nicIds(2)),
+		filterCheck("attachment.attachment-id", prep.attId, nicIds(2)),
+		filterCheck("attachment.instance-id", prep.instId, nicIds(2)),
+		filterCheck("attachment.instance-owner-id", prep.ownerId, nicIds(2)),
+		filterCheck("attachment.device-index", "1", nicIds(2)),
+		filterCheck("attachment.status", "attached", nicIds(2)),
+		filterCheck("attachment.delete-on-termination", "false", nicIds(2)),
+		filterCheck("attachment.attach-time", prep.nic2AttachTime, nicIds(2)),
+		filterCheck("source-dest-check", "true", nicIds(1, 2)),
+		filterCheck("description", "My first iface", nicIds(1)),
+		filterCheck("private-ip-address", prep.ips1[0].Address, nicIds(1)),
+		filterCheck("addresses.private-ip-address", prep.ips2[1].Address, nicIds(2)),
+		filterCheck("addresses.primary", "true", nicIds(1, 2)),
+		filterCheck("group-id", prep.group.Id, nicIds(2)),
+		filterCheck("group-name", prep.group.Name, nicIds(2)),
+	}
+	for i, t := range tests {
+		c.Logf("%d. %s", i, t.about)
+		var f *ec2.Filter
+		if t.filters != nil {
+			f = ec2.NewFilter()
+			for _, spec := range t.filters {
+				f.Add(spec.name, spec.values...)
+			}
+		}
+		c.Logf("using filter: %v", f)
+		c.Logf("expecing ids: %v\n", t.resultIds)
+		resp, err := s.ec2.NetworkInterfaces(t.ids, f)
+		if t.err != "" {
+			c.Check(err, ErrorMatches, t.err)
+			continue
+		}
+		if !c.Check(err, IsNil) {
+			continue
+		}
+		nics := make(map[string]*ec2.NetworkInterface)
+		for j := range resp.Interfaces {
+			nic := &resp.Interfaces[j]
+			c.Check(nics[nic.Id], IsNil, Commentf("duplicate NIC id: %q", nic.Id))
+			nics[nic.Id] = nic
+		}
+		// If extra NICs may be returned, eliminate all NICs that we
+		// did not create in this session.
+		if t.allowExtra {
+			for id, _ := range nics {
+				if id != prep.nicId1 && id != prep.nicId2 {
+					delete(nics, id)
+				}
+			}
+		}
+		c.Check(nics, HasLen, len(t.resultIds))
+		for j, nicId := range t.resultIds {
+			nic := nics[nicId]
+			if c.Check(nic, NotNil, Commentf("NIC %d (%v) not found; got %#v", j, nicId, nics)) {
+				c.Check(nic.Id, Equals, nicId, Commentf("NIC %d (%v)", j, nicId))
+			}
+		}
+	}
+}
+
+// prepareNICsResults holds the necessary information to use what
+// prepareNetworkInterfaces has created and clean it up afterwards.
+type prepareNICsResults struct {
+	vpcId          string
+	subId          string
+	group          ec2.SecurityGroup
+	instId         string
+	nicId1         string
+	nic1MAC        string
+	nicId2         string
+	nic2MAC        string
+	nic2DNS        string
+	ips1           []ec2.PrivateIP
+	ips2           []ec2.PrivateIP
+	attId          string
+	nic2AttachTime string
+	availZone      string
+	ownerId        string
+
+	cleanup func()
+}
+
+// prepareNetworkInterfaces creates a VPC, a subnet, and a security
+// group. Then launches a t1.micro instance and creates 2 network
+// interfaces - first one with a single private IP, second one with 2
+// private IPs. Waits until the interfaces were created and then
+// attaches the second one to the instance. Finally, it returns a
+// populated prepareNICsResults with the created entities and a
+// cleanup callback.
+func (s *ServerTests) prepareNetworkInterfaces(c *C) (results prepareNICsResults) {
 	vpcResp, err := s.ec2.CreateVPC("10.3.0.0/16", "")
 	c.Assert(err, IsNil)
-	vpcId := vpcResp.VPC.Id
-	defer s.deleteVPCs(c, []string{vpcId})
+	results.vpcId = vpcResp.VPC.Id
 
-	subResp := s.createSubnet(c, vpcId, "10.3.1.0/24", "")
-	subId := subResp.Subnet.Id
-	defer s.deleteSubnets(c, []string{subId})
-
-	sg := s.makeTestGroup(c, vpcId, "vpc-sg-1", "vpc test group1")
-	defer s.deleteGroups(c, []ec2.SecurityGroup{sg})
+	subResp := s.createSubnet(c, results.vpcId, "10.3.1.0/24", "")
+	results.subId = subResp.Subnet.Id
+	results.group = s.makeTestGroup(c, results.vpcId, "vpc-sg-1", "vpc test group1")
 
 	instList, err := s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:      imageId,
 		InstanceType: "t1.micro",
-		SubnetId:     subId,
+		SubnetId:     results.subId,
 	})
 	c.Assert(err, IsNil)
 	inst := instList.Instances[0]
 	c.Assert(inst, NotNil)
-	instId := inst.InstanceId
-	defer terminateInstances(c, s.ec2, []string{instId})
+	results.instId = inst.InstanceId
 
-	ips1 := []ec2.PrivateIP{{Address: "10.3.1.10", IsPrimary: true}}
+	results.ips1 = []ec2.PrivateIP{{Address: "10.3.1.10", IsPrimary: true}}
 	resp1, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{
-		SubnetId:    subId,
-		PrivateIPs:  ips1,
+		SubnetId:    results.subId,
+		PrivateIPs:  results.ips1,
 		Description: "My first iface",
 	})
 	c.Assert(err, IsNil)
-	assertNetworkInterface(c, resp1.NetworkInterface, "", subId, ips1)
+	c.Logf("created NIC %v", resp1.NetworkInterface)
+	assertNetworkInterface(c, resp1.NetworkInterface, "", results.subId, results.ips1)
 	c.Check(resp1.NetworkInterface.Description, Equals, "My first iface")
-	id1 := resp1.NetworkInterface.Id
+	results.nicId1 = resp1.NetworkInterface.Id
+	results.nic1MAC = resp1.NetworkInterface.MACAddress
+	// These two are the same for both NICs, so set them once only.
+	results.availZone = resp1.NetworkInterface.AvailZone
+	results.ownerId = resp1.NetworkInterface.OwnerId
 
-	ips2 := []ec2.PrivateIP{
+	results.ips2 = []ec2.PrivateIP{
 		{Address: "10.3.1.20", IsPrimary: true},
 		{Address: "10.3.1.22", IsPrimary: false},
 	}
 	resp2, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{
-		SubnetId:         subId,
-		PrivateIPs:       ips2,
-		SecurityGroupIds: []string{sg.Id},
+		SubnetId:         results.subId,
+		PrivateIPs:       results.ips2,
+		SecurityGroupIds: []string{results.group.Id},
 	})
 	c.Assert(err, IsNil)
-	assertNetworkInterface(c, resp2.NetworkInterface, "", subId, ips2)
-	c.Assert(resp2.NetworkInterface.Groups, DeepEquals, []ec2.SecurityGroup{sg})
-	id2 := resp2.NetworkInterface.Id
+	c.Logf("created NIC %v", resp2.NetworkInterface)
+	assertNetworkInterface(c, resp2.NetworkInterface, "", results.subId, results.ips2)
+	c.Assert(resp2.NetworkInterface.Groups, DeepEquals, []ec2.SecurityGroup{results.group})
+	results.nicId2 = resp2.NetworkInterface.Id
+	results.nic2MAC = resp2.NetworkInterface.MACAddress
+	results.nic2DNS = resp2.NetworkInterface.PrivateDNSName
 
 	// We only check for the network interfaces we just created,
 	// because the user might have others in his account (when testing
@@ -253,7 +434,7 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 	var list *ec2.NetworkInterfacesResp
 	done := false
 	for a := testAttempt.Start(); a.Next(); {
-		c.Logf("waiting for %v to be created", []string{id1, id2})
+		c.Logf("waiting for %v to be created", []string{results.nicId1, results.nicId2})
 		list, err = s.ec2.NetworkInterfaces(nil, nil)
 		if err != nil {
 			c.Logf("retrying; NetworkInterfaces returned: %v", err)
@@ -263,11 +444,11 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 		for _, iface := range list.Interfaces {
 			c.Logf("found NIC %v", iface)
 			switch iface.Id {
-			case id1:
-				assertNetworkInterface(c, iface, id1, subId, ips1)
+			case results.nicId1:
+				assertNetworkInterface(c, iface, results.nicId1, results.subId, results.ips1)
 				found++
-			case id2:
-				assertNetworkInterface(c, iface, id2, subId, ips2)
+			case results.nicId2:
+				assertNetworkInterface(c, iface, results.nicId2, results.subId, results.ips2)
 				found++
 			}
 			if found == 2 {
@@ -281,26 +462,36 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 		}
 	}
 	if !done {
-		c.Fatalf("timeout while waiting for NICs %v", []string{id1, id2})
+		// Attachment failed, but we still need to clean up.
+		results.cleanup = func() {
+			s.deleteInterfaces(c, []string{results.nicId1, results.nicId2})
+			terminateInstances(c, s.ec2, []string{results.instId})
+			s.deleteGroups(c, []ec2.SecurityGroup{results.group})
+			s.deleteSubnets(c, []string{results.subId})
+			s.deleteVPCs(c, []string{results.vpcId})
+		}
+		c.Fatalf("timeout while waiting for NICs %v", []string{results.nicId1, results.nicId2})
+		return
 	}
 
-	list, err = s.ec2.NetworkInterfaces([]string{id1}, nil)
+	list, err = s.ec2.NetworkInterfaces([]string{results.nicId1}, nil)
 	c.Assert(err, IsNil)
 	c.Assert(list.Interfaces, HasLen, 1)
-	assertNetworkInterface(c, list.Interfaces[0], id1, subId, ips1)
+	assertNetworkInterface(c, list.Interfaces[0], results.nicId1, results.subId, results.ips1)
 
 	f := ec2.NewFilter()
-	f.Add("network-interface-id", id2)
+	f.Add("network-interface-id", results.nicId2)
 	list, err = s.ec2.NetworkInterfaces(nil, f)
 	c.Assert(err, IsNil)
 	c.Assert(list.Interfaces, HasLen, 1)
-	assertNetworkInterface(c, list.Interfaces[0], id2, subId, ips2)
+	assertNetworkInterface(c, list.Interfaces[0], results.nicId2, results.subId, results.ips2)
 
 	// Attachment might fail if the instance is not running yet,
 	// so we retry for a while until it succeeds.
+	c.Logf("attaching NIC %q to instance %q...", results.nicId2, results.instId)
 	var attResp *ec2.AttachNetworkInterfaceResp
 	for a := testAttempt.Start(); a.Next(); {
-		attResp, err = s.ec2.AttachNetworkInterface(id2, instId, 1)
+		attResp, err = s.ec2.AttachNetworkInterface(results.nicId2, results.instId, 1)
 		if err != nil {
 			c.Logf("AttachNetworkInterface returned: %v; retrying...", err)
 			attResp = nil
@@ -314,32 +505,60 @@ func (s *ServerTests) TestNetworkInterfaces(c *C) {
 		c.Fatalf("timeout while waiting for AttachNetworkInterface to succeed")
 	}
 
-	list, err = s.ec2.NetworkInterfaces([]string{id2}, nil)
+	list, err = s.ec2.NetworkInterfaces([]string{results.nicId2}, nil)
 	c.Assert(err, IsNil)
 	att := list.Interfaces[0].Attachment
 	c.Check(att.Id, Equals, attResp.AttachmentId)
-	c.Check(att.InstanceId, Equals, instId)
+	c.Check(att.InstanceId, Equals, results.instId)
 	c.Check(att.DeviceIndex, Equals, 1)
-	c.Check(att.Status, Matches, "(attaching|in-use)")
+	c.Check(att.Status, Matches, "(attaching|attached)")
+	results.attId = att.Id
+	results.nic2AttachTime = att.AttachTime
 
-	_, err = s.ec2.DetachNetworkInterface(att.Id, true)
-	c.Check(err, IsNil)
+	results.cleanup = func() {
+		// We won't be able to delete the interface until it is attached,
+		// so detach it first.
+		_, err := s.ec2.DetachNetworkInterface(results.attId, true)
+		c.Check(err, IsNil)
 
-	_, err = s.ec2.DeleteNetworkInterface(id1)
-	c.Assert(err, IsNil)
-
-	// We might not be able to delete the interface until the
-	// detachment is completed, so we need to retry here as well.
-	for a := testAttempt.Start(); a.Next(); {
-		_, err = s.ec2.DeleteNetworkInterface(id2)
-		if err != nil {
-			c.Logf("DeleteNetworkInterface returned: %v; retrying...", err)
-			continue
-		}
-		c.Logf("DeleteNetworkInterface succeeded")
-		return
+		s.deleteInterfaces(c, []string{results.nicId1, results.nicId2})
+		terminateInstances(c, s.ec2, []string{results.instId})
+		s.deleteGroups(c, []ec2.SecurityGroup{results.group})
+		s.deleteSubnets(c, []string{results.subId})
+		s.deleteVPCs(c, []string{results.vpcId})
 	}
-	c.Fatalf("timeout while waiting for DeleteNetworkInterface to succeed")
+	return results
+}
+
+// deleteInterfaces ensures the given network interfaces are deleted,
+// by retrying until a timeout or all interfaces cannot be found
+// anymore. This should be used to make sure tests leave no interfaces
+// around.
+func (s *ServerTests) deleteInterfaces(c *C, ids []string) {
+	testAttempt := aws.AttemptStrategy{
+		Total: 5 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		deleted := 0
+		c.Logf("deleting interfaces %v", ids)
+		for _, id := range ids {
+			_, err := s.ec2.DeleteNetworkInterface(id)
+			if err == nil || errorCode(err) == "InvalidNetworkInterfaceID.NotFound" {
+				c.Logf("interface %s deleted", id)
+				deleted++
+				continue
+			}
+			if err != nil {
+				c.Logf("retrying; DeleteNetworkInterface returned: %v", err)
+			}
+		}
+		if deleted == len(ids) {
+			c.Logf("all interfaces deleted")
+			return
+		}
+	}
+	c.Fatalf("timeout while waiting %v interfaces to get deleted!", ids)
 }
 
 func assertNetworkInterface(c *C, obtained ec2.NetworkInterface, expectId, expectSubId string, expectIPs []ec2.PrivateIP) {
