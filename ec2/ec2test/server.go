@@ -2037,24 +2037,12 @@ func (srv *Server) describeIFaces(w http.ResponseWriter, req *http.Request, reqI
 	resp.XMLName = xml.Name{defaultXMLName, "DescribeNetworkInterfacesResponse"}
 	resp.RequestId = reqId
 	for _, i := range srv.ifaces {
-		// Without neither filers nor ids - return everything.
-		if len(f) == 0 && len(idMap) == 0 {
-			resp.Interfaces = append(resp.Interfaces, i.NetworkInterface)
-			continue
-		}
 		filterMatch, err := f.ok(i)
 		if err != nil {
 			fatalf(400, "InvalidParameterValue", "describe ifaces: %v", err)
 		}
-		_, requestedByID := idMap[i.Id]
-		if len(idMap) == 0 {
-			// since filter.ok() returns true when none matches, we
-			// need to do the same for requestedByID - true if none
-			// specified.
-			requestedByID = true
-		}
-
-		if filterMatch && requestedByID {
+		if filterMatch && (len(idMap) == 0 || idMap[i.Id]) {
+			// filter.ok() returns true when the filter is empty.
 			resp.Interfaces = append(resp.Interfaces, i.NetworkInterface)
 		}
 	}
