@@ -52,7 +52,9 @@ $ git clone https://github.com/<your-github-username>/amz
 ```
 $ go get gopkg.in/check.v1
 ```
- * Create a feature branch for your contribution. Make your changes there. It's recommended to try keeping your changes as small as possible. Split bigger changes in several pull request to make the code review easier.
+ * Create a feature branch for your contribution. Make your changes there. 
+ * It's recommended to try keeping your changes as small as possible.
+ * Split bigger changes in several pull request to make the code review easier.
  * Be sure to write tests for your code changes and run them before proposing:
 ```
 $ go test -gocheck.v
@@ -60,7 +62,8 @@ $ go test -gocheck.v
  * Push your feature branch to your fork.
  * Open a pull request with a description of your change.
  * A maintainer should notice your pull request and do a code review. You can also ask a [maintainer](https://github.com/orgs/go-amz/people) for review.
- * Reply to comments, fix issues, push your changes. Depending on the size of the patch, this process can be repeated a few times.
+ * Reply to comments, fix issues, push your changes. 
+ * Depending on the size of the patch, this process can be repeated a few times.
  * Once you get an approval and the CI tests pass, ask a maintainer to merge your patch.
 
 Becoming an official maintainer
