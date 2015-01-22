@@ -92,7 +92,8 @@ not clear.
  * **Do not** rebase commits you already pushed, even when in your own fork. Others might depend on them.
  * Write new tests and update existing ones when changing the code. All changes should have tests, when possible.
  * Use `go fmt` to format your code before pushing.
- * Document exported types, functions, etc. See the excellent [Effective Go](http://golang.org/doc/effective_go.html) style guide, which we use.
+ * Document exported types, functions, constants, variables, etc.
+ * See the excellent [Effective Go](http://golang.org/doc/effective_go.html) style guide, which we use.
  * When reporting issues, provide the necessary information to reproduce the issue.
 
 Thanks for your interest in goamz!
