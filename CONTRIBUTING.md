@@ -75,7 +75,8 @@ frequently proposing patches and can dedicate some of your time to
 help, please consider following the following procedure.
 
  * You need a [GitHub account](https://github.com/signup/free) if you don't have one.
- * Review and sign the Canonical [Contributor License Agreement](http://www.ubuntu.com/legal/contributors/). You might find the [CLA FAQ](http://www.ubuntu.com/legal/contributors/licence-agreement-faq) page useful.
+ * Review and sign the Canonical [Contributor License Agreement](http://www.ubuntu.com/legal/contributors/).
+ * For any questions about the CLA, you might find the [CLA FAQ](http://www.ubuntu.com/legal/contributors/licence-agreement-faq) page useful.
  * Request to become a maintainer by contacting the [existing maintainers](https://github.com/orgs/go-amz/people).
  * You're welcome to add your name to the [AUTHORS.md](AUTHORS.md) list once approved.
 
