@@ -128,6 +128,7 @@ func (s *S) TestRunInstancesExample(c *C) {
 				IsPrimary: false,
 			}},
 		}},
+		EBSOptimized: true,
 	}
 	resp, err := s.ec2.RunInstances(&options)
 
@@ -172,6 +173,7 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddresses.0.Primary"], DeepEquals, []string{"true"})
 	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddresses.1.PrivateIpAddress"], DeepEquals, []string{"10.0.1.20"})
 	c.Assert(req.Form["NetworkInterface.1.PrivateIpAddresses.1.Primary"], DeepEquals, []string{"false"})
+	c.Assert(req.Form["EbsOptimized"], DeepEquals, []string{"true"})
 
 	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
