@@ -265,6 +265,7 @@ type RunInstances struct {
 	PrivateIPAddress      string
 	BlockDeviceMappings   []BlockDeviceMapping
 	NetworkInterfaces     []RunNetworkInterface
+	EBSOptimized          bool
 }
 
 // Response to a RunInstances request.
@@ -395,6 +396,9 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 	}
 	if options.PrivateIPAddress != "" {
 		params["PrivateIpAddress"] = options.PrivateIPAddress
+	}
+	if options.EBSOptimized {
+		params["EbsOptimized"] = "true"
 	}
 
 	resp = &RunInstancesResp{}
