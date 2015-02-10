@@ -12,6 +12,7 @@ Please, keep the list sorted.
 
 Full name | E-mail | GitHub account
 ----------|--------|---------------
+Alexander Surma | surma {at} surmair.de | [@surma](https://github.com/surma)
 Andrew Wilkins | andrew.wilkins {at} canonical.com | [@axw](http://github.com/axw)
 Dave Cheney | dave.cheney {at} canonical.com | [@davecheney](http://github.com/davecheney)
 Dimiter Naydenov | dimiter.naydenov {at} canonical.com | [@dimitern](http://github.com/dimitern)
