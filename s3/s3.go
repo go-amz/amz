@@ -17,7 +17,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"strconv"
 	"strings"
@@ -32,6 +31,7 @@ const debug = false
 type S3 struct {
 	aws.Auth
 	aws.Region
+	aws.Signer
 	private byte // Reserve the right of using private data.
 }
 
@@ -68,20 +68,23 @@ func RetryAttempts(retry bool) {
 }
 
 // New creates a new S3.
-func New(auth aws.Auth, region aws.Region) *S3 {
-	return &S3{auth, region, 0}
+func New(auth aws.Auth, region aws.Region, signer aws.Signer) *S3 {
+	return &S3{auth, region, signer, 0}
 }
 
 // Bucket returns a Bucket with the given name.
-func (s3 *S3) Bucket(name string) *Bucket {
+func (s3 *S3) Bucket(name string) (*Bucket, error) {
+	if strings.IndexAny(name, "/:@") >= 0 {
+		return nil, fmt.Errorf("bad S3 bucket: %q", name)
+	}
 	if s3.Region.S3BucketEndpoint != "" || s3.Region.S3LowercaseBucket {
 		name = strings.ToLower(name)
 	}
-	return &Bucket{s3, name}
+	return &Bucket{s3, name}, nil
 }
 
-var createBucketConfiguration = `<CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/"> 
-  <LocationConstraint>%s</LocationConstraint> 
+var createBucketConfiguration = `<CreateBucketConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <LocationConstraint>%s</LocationConstraint>
 </CreateBucketConfiguration>`
 
 // locationConstraint returns an io.Reader specifying a LocationConstraint if
@@ -107,21 +110,30 @@ const (
 	BucketOwnerFull   = ACL("bucket-owner-full-control")
 )
 
+// Put inserts an object into the S3 bucket.
+//
+// See http://goo.gl/FEBPD for details.
+func (b *Bucket) Put(path string, data []byte, contType string, perm ACL) error {
+	body := bytes.NewBuffer(data)
+	return b.PutReader(path, body, int64(len(data)), contType, perm)
+}
+
 // PutBucket creates a new bucket.
 //
 // See http://goo.gl/ndjnR for details.
 func (b *Bucket) PutBucket(perm ACL) error {
-	headers := map[string][]string{
-		"x-amz-acl": {string(perm)},
+
+	req, err := http.NewRequest("PUT", b.ResolveS3BucketEndpoint(b.Name), b.locationConstraint())
+	if err != nil {
+		return err
 	}
-	req := &request{
-		method:  "PUT",
-		bucket:  b.Name,
-		path:    "/",
-		headers: headers,
-		payload: b.locationConstraint(),
-	}
-	return b.S3.query(req, nil)
+	req.Close = true
+
+	req.Header.Add("x-amz-acl", string(perm))
+
+	b.Sign(req, b.Auth)
+	_, err = http.DefaultClient.Do(req)
+	return err
 }
 
 // DelBucket removes an existing S3 bucket. All objects in the bucket must
@@ -129,17 +141,15 @@ func (b *Bucket) PutBucket(perm ACL) error {
 //
 // See http://goo.gl/GoBrY for details.
 func (b *Bucket) DelBucket() (err error) {
-	req := &request{
-		method: "DELETE",
-		bucket: b.Name,
-		path:   "/",
+
+	req, err := http.NewRequest("DELETE", b.ResolveS3BucketEndpoint(b.Name), nil)
+	if err != nil {
+		return err
 	}
-	for attempt := attempts.Start(); attempt.Next(); {
-		err = b.S3.query(req, nil)
-		if !shouldRetry(err) {
-			break
-		}
-	}
+	req.Close = true
+
+	b.Sign(req, b.Auth)
+	_, err = requestRetryLoop(req, attempts)
 	return err
 }
 
@@ -156,73 +166,72 @@ func (b *Bucket) Get(path string) (data []byte, err error) {
 	return data, err
 }
 
-// GetReader retrieves an object from an S3 bucket.
-// It is the caller's responsibility to call Close on rc when
-// finished reading.
+// GetReader retrieves an object from an S3 bucket. It is the caller's
+// responsibility to call Close on rc when finished reading.
 func (b *Bucket) GetReader(path string) (rc io.ReadCloser, err error) {
-	req := &request{
-		bucket: b.Name,
-		path:   path,
-	}
-	err = b.S3.prepare(req)
+
+	req, err := http.NewRequest("GET", b.Region.ResolveS3BucketEndpoint(b.Name), nil)
 	if err != nil {
 		return nil, err
 	}
-	for attempt := attempts.Start(); attempt.Next(); {
-		hresp, err := b.S3.run(req)
-		if shouldRetry(err) && attempt.HasNext() {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		return hresp.Body, nil
+	req.Close = true
+	req.URL.Path += path
+
+	b.S3.Sign(req, b.Auth)
+	resp, err := requestRetryLoop(req, attempts)
+	if err != nil {
+		return nil, err
 	}
-	panic("unreachable")
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return nil, buildError(resp)
+	}
+	return resp.Body, nil
 }
 
 // Put inserts an object into the S3 bucket.
 //
 // See http://goo.gl/FEBPD for details.
-func (b *Bucket) Put(path string, data []byte, contType string, perm ACL) error {
-	body := bytes.NewBuffer(data)
-	return b.PutReader(path, body, int64(len(data)), contType, perm)
-}
-
-// PutReader inserts an object into the S3 bucket by consuming data
-// from r until EOF.
 func (b *Bucket) PutReader(path string, r io.Reader, length int64, contType string, perm ACL) error {
 	return b.PutReaderWithHeader(path, r, length, contType, perm, http.Header{})
 }
 
 // PutReader inserts an object into the S3 bucket by consuming data
-// from r until EOF. The HTTP PUT request will have the additional
-// headers provided. This is useful for cache control etc.
+// from r until EOF.
 func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, contType string, perm ACL, hdrs http.Header) error {
-	hdrs.Set("Content-Length", strconv.FormatInt(length, 10))
-	hdrs.Set("Content-Type", contType)
-	hdrs.Set("x-amz-acl", string(perm))
 
-	req := &request{
-		method:  "PUT",
-		bucket:  b.Name,
-		path:    path,
-		headers: hdrs,
-		payload: r,
+	req, err := http.NewRequest("PUT", b.ResolveS3BucketEndpoint(b.Name), r)
+	if err != nil {
+		return err
 	}
-	return b.S3.query(req, nil)
+	req.Header = hdrs
+	req.Close = true
+	req.URL.Path += path
+
+	req.Header.Add("Content-Length", strconv.FormatInt(length, 10))
+	req.Header.Add("Content-Type", contType)
+	req.Header.Add("x-amz-acl", string(perm))
+
+	b.Sign(req, b.Auth)
+	_, err = http.DefaultClient.Do(req)
+	return err
 }
 
 // Del removes an object from the S3 bucket.
 //
 // See http://goo.gl/APeTt for details.
 func (b *Bucket) Del(path string) error {
-	req := &request{
-		method: "DELETE",
-		bucket: b.Name,
-		path:   path,
+
+	req, err := http.NewRequest("DELETE", b.ResolveS3BucketEndpoint(b.Name), nil)
+	if err != nil {
+		return err
 	}
-	return b.S3.query(req, nil)
+	req.Close = true
+	req.URL.Path += path
+
+	b.Sign(req, b.Auth)
+	_, err = http.DefaultClient.Do(req)
+
+	return err
 }
 
 // The ListResp type holds the results of a List bucket operation.
@@ -309,69 +318,33 @@ type Key struct {
 //     }
 //
 // See http://goo.gl/YjQTc for details.
-func (b *Bucket) List(prefix, delim, marker string, max int) (result *ListResp, err error) {
-	params := map[string][]string{
-		"prefix":    {prefix},
-		"delimiter": {delim},
-		"marker":    {marker},
-	}
-	if max != 0 {
-		params["max-keys"] = []string{strconv.FormatInt(int64(max), 10)}
-	}
-	req := &request{
-		bucket: b.Name,
-		params: params,
-	}
-	result = &ListResp{}
-	for attempt := attempts.Start(); attempt.Next(); {
-		err = b.S3.query(req, result)
-		if !shouldRetry(err) {
-			break
-		}
-	}
+func (b *Bucket) List(prefix, delim, marker string, max int) (*ListResp, error) {
+
+	req, err := http.NewRequest("GET", b.ResolveS3BucketEndpoint(b.Name), nil)
 	if err != nil {
 		return nil, err
 	}
-	return result, nil
-}
+	req.Close = true
 
-// URL returns a non-signed URL that allows retriving the
-// object at path. It only works if the object is publicly
-// readable (see SignedURL).
-func (b *Bucket) URL(path string) string {
-	req := &request{
-		bucket: b.Name,
-		path:   path,
+	query := req.URL.Query()
+	query.Add("prefix", prefix)
+	query.Add("delimiter", delim)
+	query.Add("marker", marker)
+	if max != 0 {
+		query.Add("max-keys", strconv.FormatInt(int64(max), 10))
 	}
-	err := b.S3.prepare(req)
-	if err != nil {
-		panic(err)
-	}
-	u, err := req.url()
-	if err != nil {
-		panic(err)
-	}
-	u.RawQuery = ""
-	return u.String()
-}
+	req.URL.RawQuery = query.Encode()
 
-// SignedURL returns a signed URL that allows anyone holding the URL
-// to retrieve the object at path. The signature is valid until expires.
-func (b *Bucket) SignedURL(path string, expires time.Time) string {
-	req := &request{
-		bucket: b.Name,
-		path:   path,
-		params: url.Values{"Expires": {strconv.FormatInt(expires.Unix(), 10)}},
-	}
-	err := b.S3.prepare(req)
+	b.Sign(req, b.Auth)
+
+	resp, err := requestRetryLoop(req, attempts)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	u, err := req.url()
-	if err != nil {
-		panic(err)
-	}
-	return u.String()
+
+	var result ListResp
+	err = xml.NewDecoder(resp.Body).Decode(&result)
+	return &result, err
 }
 
 type request struct {
@@ -394,118 +367,6 @@ func (req *request) url() (*url.URL, error) {
 	u.RawQuery = req.params.Encode()
 	u.Path = req.path
 	return u, nil
-}
-
-// query prepares and runs the req request.
-// If resp is not nil, the XML data contained in the response
-// body will be unmarshalled on it.
-func (s3 *S3) query(req *request, resp interface{}) error {
-	err := s3.prepare(req)
-	if err != nil {
-		return err
-	}
-	hresp, err := s3.run(req)
-	if err != nil {
-		return err
-	}
-	if resp != nil {
-		err = xml.NewDecoder(hresp.Body).Decode(resp)
-	}
-	hresp.Body.Close()
-	return nil
-}
-
-// prepare sets up req to be delivered to S3.
-func (s3 *S3) prepare(req *request) error {
-	if !req.prepared {
-		req.prepared = true
-		if req.method == "" {
-			req.method = "GET"
-		}
-		// Copy so they can be mutated without affecting on retries.
-		params := make(url.Values)
-		headers := make(http.Header)
-		for k, v := range req.params {
-			params[k] = v
-		}
-		for k, v := range req.headers {
-			headers[k] = v
-		}
-		req.params = params
-		req.headers = headers
-		if !strings.HasPrefix(req.path, "/") {
-			req.path = "/" + req.path
-		}
-		req.signpath = req.path
-		if req.bucket != "" {
-			req.baseurl = s3.Region.S3BucketEndpoint
-			if req.baseurl == "" {
-				// Use the path method to address the bucket.
-				req.baseurl = s3.Region.S3Endpoint
-				req.path = "/" + req.bucket + req.path
-			} else {
-				// Just in case, prevent injection.
-				if strings.IndexAny(req.bucket, "/:@") >= 0 {
-					return fmt.Errorf("bad S3 bucket: %q", req.bucket)
-				}
-				req.baseurl = strings.Replace(req.baseurl, "${bucket}", req.bucket, -1)
-			}
-			req.signpath = "/" + req.bucket + req.signpath
-		}
-	}
-
-	// Always sign again as it's not clear how far the
-	// server has handled a previous attempt.
-	u, err := url.Parse(req.baseurl)
-	if err != nil {
-		return fmt.Errorf("bad S3 endpoint URL %q: %v", req.baseurl, err)
-	}
-	req.headers["Host"] = []string{u.Host}
-	req.headers["Date"] = []string{time.Now().In(time.UTC).Format(time.RFC1123)}
-	sign(s3.Auth, req.method, req.signpath, req.params, req.headers)
-	return nil
-}
-
-// run sends req and returns the http response from the server.
-func (s3 *S3) run(req *request) (*http.Response, error) {
-	if debug {
-		log.Printf("Running S3 request: %#v", req)
-	}
-
-	u, err := req.url()
-	if err != nil {
-		return nil, err
-	}
-
-	hreq := http.Request{
-		URL:        u,
-		Method:     req.method,
-		ProtoMajor: 1,
-		ProtoMinor: 1,
-		Close:      true,
-		Header:     req.headers,
-	}
-
-	if v, ok := req.headers["Content-Length"]; ok {
-		hreq.ContentLength, _ = strconv.ParseInt(v[0], 10, 64)
-		delete(req.headers, "Content-Length")
-	}
-	if req.payload != nil {
-		hreq.Body = ioutil.NopCloser(req.payload)
-	}
-
-	hresp, err := http.DefaultClient.Do(&hreq)
-	if err != nil {
-		return nil, err
-	}
-	if debug {
-		dump, _ := httputil.DumpResponse(hresp, true)
-		log.Printf("} -> %s\n", dump)
-	}
-	if hresp.StatusCode != 200 && hresp.StatusCode != 204 {
-		return nil, buildError(hresp)
-	}
-	return hresp, err
 }
 
 // Error represents an error in an operation with S3.
@@ -576,4 +437,24 @@ func shouldRetry(err error) bool {
 func hasCode(err error, code string) bool {
 	s3err, ok := err.(*Error)
 	return ok && s3err.Code == code
+}
+
+// requestRetryLoop attempts to send the request until the given
+// strategy says to stop.
+func requestRetryLoop(req *http.Request, retryStrat aws.AttemptStrategy) (*http.Response, error) {
+
+	for attempt := attempts.Start(); attempt.Next(); {
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			if shouldRetry(err) && attempt.HasNext() {
+				continue
+			}
+			return nil, err
+		}
+
+		return resp, nil
+	}
+
+	panic("could not complete the request within the specified retry attempts")
 }

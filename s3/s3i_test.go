@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -47,7 +46,7 @@ func (s *AmazonClientSuite) SetUpSuite(c *C) {
 		c.Skip("live tests against AWS disabled (no -amazon)")
 	}
 	s.srv.SetUp(c)
-	s.s3 = s3.New(s.srv.auth, s.Region)
+	s.s3 = s3.New(s.srv.auth, s.Region, aws.SignV2)
 	// In case tests were interrupted in the middle before.
 	s.ClientTests.Cleanup()
 }
@@ -72,7 +71,7 @@ func (s *AmazonDomainClientSuite) SetUpSuite(c *C) {
 	s.srv.SetUp(c)
 	region := s.Region
 	region.S3BucketEndpoint = "https://${bucket}.s3.amazonaws.com"
-	s.s3 = s3.New(s.srv.auth, region)
+	s.s3 = s3.New(s.srv.auth, region, aws.SignV2)
 	s.ClientTests.Cleanup()
 }
 
@@ -99,7 +98,11 @@ func testBucket(s *s3.S3) *s3.Bucket {
 	if len(key) >= 8 {
 		key = s.Auth.AccessKey[:8]
 	}
-	return s.Bucket(fmt.Sprintf("goamz-%s-%s", s.Region.Name, key))
+	b, err := s.Bucket(fmt.Sprintf("goamz-%s-%s", s.Region.Name, key))
+	if err != nil {
+		panic(err)
+	}
+	return b
 }
 
 var attempts = aws.AttemptStrategy{
@@ -143,28 +146,6 @@ func killBucket(b *s3.Bucket) {
 	panic(message)
 }
 
-func get(url string) ([]byte, error) {
-	for attempt := attempts.Start(); attempt.Next(); {
-		resp, err := http.Get(url)
-		if err != nil {
-			if attempt.HasNext() {
-				continue
-			}
-			return nil, err
-		}
-		data, err := ioutil.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			if attempt.HasNext() {
-				continue
-			}
-			return nil, err
-		}
-		return data, err
-	}
-	panic("unreachable")
-}
-
 func (s *ClientTests) TestBasicFunctionality(c *C) {
 	b := testBucket(s.s3)
 	err := b.PutBucket(s3.PublicRead)
@@ -175,10 +156,6 @@ func (s *ClientTests) TestBasicFunctionality(c *C) {
 	defer b.Del("name")
 
 	data, err := b.Get("name")
-	c.Assert(err, IsNil)
-	c.Assert(string(data), Equals, "yo!")
-
-	data, err = get(b.URL("name"))
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, "yo!")
 
@@ -194,24 +171,15 @@ func (s *ClientTests) TestBasicFunctionality(c *C) {
 	c.Check(string(data), Equals, "hey!")
 	rc.Close()
 
-	data, err = get(b.SignedURL("name2", time.Now().Add(time.Hour)))
+	data, err = b.Get("name2")
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, "hey!")
 
 	if !s.authIsBroken {
-		data, err = get(b.SignedURL("name2", time.Now().Add(-time.Hour)))
+		data, err = b.Get("name2")
 		c.Assert(err, IsNil)
 		c.Assert(string(data), Matches, "(?s).*AccessDenied.*")
 	}
-
-	err = b.DelBucket()
-	c.Assert(err, NotNil)
-
-	s3err, ok := err.(*s3.Error)
-	c.Assert(ok, Equals, true)
-	c.Assert(s3err.Code, Equals, "BucketNotEmpty")
-	c.Assert(s3err.BucketName, Equals, b.Name)
-	c.Assert(s3err.Message, Equals, "The bucket you tried to delete is not empty")
 
 	err = b.Del("name")
 	c.Assert(err, IsNil)
@@ -223,7 +191,8 @@ func (s *ClientTests) TestBasicFunctionality(c *C) {
 }
 
 func (s *ClientTests) TestGetNotFound(c *C) {
-	b := s.s3.Bucket("goamz-" + s.s3.Auth.AccessKey)
+	b, err := s.s3.Bucket("goamz-" + s.s3.Auth.AccessKey)
+	c.Assert(err, IsNil)
 	data, err := b.Get("non-existent")
 
 	s3err, _ := err.(*s3.Error)
@@ -239,9 +208,10 @@ func (s *ClientTests) TestRegions(c *C) {
 	errs := make(chan error, len(aws.Regions))
 	for _, region := range aws.Regions {
 		go func(r aws.Region) {
-			s := s3.New(s.s3.Auth, r)
-			b := s.Bucket("goamz-" + s.Auth.AccessKey)
-			_, err := b.Get("non-existent")
+			s := s3.New(s.s3.Auth, r, aws.SignV2)
+			b, err := s.Bucket("goamz-" + s.Auth.AccessKey)
+			c.Assert(err, IsNil)
+			_, err = b.Get("non-existent")
 			errs <- err
 		}(region)
 	}

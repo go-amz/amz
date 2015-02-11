@@ -11,6 +11,7 @@ package aws
 import (
 	"errors"
 	"os"
+	"strings"
 )
 
 // Region defines the URLs where AWS services may be accessed.
@@ -28,6 +29,13 @@ type Region struct {
 	SQSEndpoint          string
 	IAMEndpoint          string
 	Sign                 Signer // Method which will be used to sign requests.
+}
+
+func (r Region) ResolveS3BucketEndpoint(bucketName string) string {
+	if r.S3BucketEndpoint != "" {
+		return strings.Replace(r.S3BucketEndpoint, "${bucket}", bucketName, -1)
+	}
+	return r.S3Endpoint + "/" + bucketName + "/"
 }
 
 var USEast = Region{
