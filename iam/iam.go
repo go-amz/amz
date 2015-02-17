@@ -1,3 +1,8 @@
+//
+// goamz - Go packages to interact with the Amazon Web Services.
+//
+// https://wiki.ubuntu.com/goamz
+//
 // The iam package provides types and functions for interaction with the AWS
 // Identity and Access Management (IAM) service.
 package iam
