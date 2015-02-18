@@ -1,3 +1,8 @@
+//
+// goamz - Go packages to interact with the Amazon Web Services.
+//
+// https://wiki.ubuntu.com/goamz
+//
 // Package iamtest implements a fake IAM provider with the capability of
 // inducing errors on any given operation, and retrospectively determining what
 // operations have been carried out.
