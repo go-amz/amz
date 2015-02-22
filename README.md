@@ -3,7 +3,10 @@ goamz
 
 Go package to interact with Amazon Web Services
 
-[![Build Status](https://travis-ci.org/go-amz/amz.svg?branch=v2)](https://travis-ci.org/go-amz/amz) [![GoDoc](https://godoc.org/gopkg.in/amz.v2?status.png)](http://godoc.org/gopkg.in/amz.v2)
+[![Build Status](https://travis-ci.org/go-amz/amz.svg?branch=v2)](https://travis-ci.org/go-amz/amz)
+[![GoDoc](https://godoc.org/gopkg.in/amz.v2?status.png)](http://godoc.org/gopkg.in/amz.v2)
+
+**NOTE**: This is a stable branch, which is NOT compatible with the original goamz source from [Launchpad](https://launchpad.net/goamz/trunk). If you want the same features as in the original source, except for the changed import paths, use the `v1` branch.
 
 Instructions
 ------------
