@@ -20,4 +20,5 @@ Gustavo Niemeyer | gustavo.niemeyer {at} canonical.com | [@niemeyer](http://gith
 Ian Booth | ian.booth {at} canonical.com | [@wallyworld](http://github.com/wallyworld)
 Katherine Cox-Buday | katherine.cox-buday {at} canonical.com | [@katco-](http://github.com/katco-)
 Martin Packman | martin.packman {at} canonical.com | [@bz2](http://github.com/bz2)
+Nathan Youngman | git {at} nathany.com | [@nathany](https://github.com/nathany)
 Roger Peppe | roger.peppe {at} canonical.com | [@rogpeppe](http://github.com/rogpeppe)
