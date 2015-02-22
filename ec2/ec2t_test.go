@@ -1,3 +1,8 @@
+//
+// goamz - Go packages to interact with the Amazon Web Services.
+//
+// https://wiki.ubuntu.com/goamz
+//
 package ec2_test
 
 import (
