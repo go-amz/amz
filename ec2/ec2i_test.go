@@ -38,7 +38,7 @@ func (s *AmazonClientSuite) SetUpSuite(c *C) {
 		c.Skip("AmazonClientSuite tests not enabled")
 	}
 	s.srv.SetUp(c)
-	s.ec2 = ec2.New(s.srv.auth, aws.USEast)
+	s.ec2 = ec2.New(s.srv.auth, aws.USEast, aws.SignV2)
 }
 
 // ClientTests defines integration tests designed to test the client.
@@ -184,7 +184,7 @@ func (s *ClientTests) TestRegions(c *C) {
 	errs := make(chan error, len(allRegions))
 	for _, region := range allRegions {
 		go func(r aws.Region) {
-			e := ec2.New(s.ec2.Auth, r)
+			e := ec2.New(s.ec2.Auth, r, aws.SignV2)
 			_, err := e.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: name}, perms)
 			errs <- err
 		}(region)

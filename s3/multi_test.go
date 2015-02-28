@@ -25,7 +25,7 @@ func (s *S) TestInitMulti(c *C) {
 	c.Assert(req.URL.Path, Equals, "/sample/multi")
 	c.Assert(req.Header["Content-Type"], DeepEquals, []string{"text/plain"})
 	c.Assert(req.Header["X-Amz-Acl"], DeepEquals, []string{"private"})
-	c.Assert(req.Form["uploads"], DeepEquals, []string(nil))
+	c.Assert(req.Form["uploads"], DeepEquals, []string{""})
 
 	c.Assert(multi.UploadId, Matches, "JNbR_[A-Za-z0-9.]+QQ--")
 }
@@ -52,7 +52,7 @@ func (s *S) TestMultiNoPreviousUpload(c *C) {
 	req = testServer.WaitRequest()
 	c.Assert(req.Method, Equals, "POST")
 	c.Assert(req.URL.Path, Equals, "/sample/multi")
-	c.Assert(req.Form["uploads"], DeepEquals, []string(nil))
+	c.Assert(req.Form["uploads"], DeepEquals, []string{""})
 
 	c.Assert(multi.UploadId, Matches, "JNbR_[A-Za-z0-9.]+QQ--")
 }

@@ -21,7 +21,7 @@ func (s *LocalServer) SetUp(c *C) {
 	c.Assert(srv, NotNil)
 
 	s.srv = srv
-	s.region = aws.Region{IAMEndpoint: srv.URL(), Sign: aws.SignV2}
+	s.region = aws.Region{IAMEndpoint: srv.URL()}
 }
 
 // LocalServerSuite defines tests that will run

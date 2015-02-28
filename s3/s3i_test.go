@@ -46,7 +46,7 @@ func (s *AmazonClientSuite) SetUpSuite(c *C) {
 		c.Skip("live tests against AWS disabled (no -amazon)")
 	}
 	s.srv.SetUp(c)
-	s.s3 = s3.New(s.srv.auth, s.Region, aws.SignV2)
+	s.s3 = s3.New(s.srv.auth, s.Region)
 	// In case tests were interrupted in the middle before.
 	s.ClientTests.Cleanup()
 }
@@ -70,8 +70,8 @@ func (s *AmazonDomainClientSuite) SetUpSuite(c *C) {
 	}
 	s.srv.SetUp(c)
 	region := s.Region
-	region.S3BucketEndpoint = "https://${bucket}.s3.amazonaws.com"
-	s.s3 = s3.New(s.srv.auth, region, aws.SignV2)
+	region.S3BucketEndpoint += "https://s3.amazonaws.com/${bucket}/"
+	s.s3 = s3.New(s.srv.auth, region)
 	s.ClientTests.Cleanup()
 }
 
@@ -83,8 +83,7 @@ func (s *AmazonDomainClientSuite) TearDownTest(c *C) {
 // It is not used as a test suite in itself, but embedded within
 // another type.
 type ClientTests struct {
-	s3           *s3.S3
-	authIsBroken bool
+	s3 *s3.S3
 }
 
 func (s *ClientTests) Cleanup() {
@@ -98,7 +97,14 @@ func testBucket(s *s3.S3) *s3.Bucket {
 	if len(key) >= 8 {
 		key = s.Auth.AccessKey[:8]
 	}
-	b, err := s.Bucket(fmt.Sprintf("goamz-%s-%s", s.Region.Name, key))
+	b, err := s.Bucket(strings.ToLower(fmt.Sprintf(
+		"goamz-%s-%s-%s",
+		s.Region.Name,
+		key,
+		// Add in the time element to help isolate tests from one
+		// another.
+		time.Now().Format("20060102T150405.999999999Z0700"),
+	)))
 	if err != nil {
 		panic(err)
 	}
@@ -175,12 +181,6 @@ func (s *ClientTests) TestBasicFunctionality(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, "hey!")
 
-	if !s.authIsBroken {
-		data, err = b.Get("name2")
-		c.Assert(err, IsNil)
-		c.Assert(string(data), Matches, "(?s).*AccessDenied.*")
-	}
-
 	err = b.Del("name")
 	c.Assert(err, IsNil)
 	err = b.Del("name2")
@@ -205,29 +205,40 @@ func (s *ClientTests) TestGetNotFound(c *C) {
 
 // Communicate with all endpoints to see if they are alive.
 func (s *ClientTests) TestRegions(c *C) {
-	errs := make(chan error, len(aws.Regions))
+	type result struct {
+		aws.Region
+		error
+	}
+
+	results := make(chan result, len(aws.Regions))
 	for _, region := range aws.Regions {
 		go func(r aws.Region) {
-			s := s3.New(s.s3.Auth, r, aws.SignV2)
+			s := s3.New(s.s3.Auth, r)
 			b, err := s.Bucket("goamz-" + s.Auth.AccessKey)
-			c.Assert(err, IsNil)
+			if !c.Check(err, IsNil) {
+				return
+			}
+
 			_, err = b.Get("non-existent")
-			errs <- err
+			if !c.Check(err, NotNil) {
+				return
+			}
+
+			results <- result{r, err}
 		}(region)
 	}
 	for _ = range aws.Regions {
-		err := <-errs
-		if err != nil {
-			s3_err, ok := err.(*s3.Error)
-			if ok {
-				c.Check(s3_err.Code, Matches, "NoSuchBucket")
-			} else if _, ok = err.(*net.DNSError); ok {
-				// Okay as well.
-			} else {
-				c.Errorf("Non-S3 error: %s", err)
+		result := <-results
+		if s3_err, ok := result.error.(*s3.Error); ok {
+			if result.Region == aws.CNNorth && s3_err.Code == "InvalidAccessKeyId" {
+				c.Log("You must utilize an account specifically for CNNorth.")
+				continue
 			}
+			c.Check(s3_err.Code, Matches, "NoSuchBucket")
+		} else if _, ok = result.error.(*net.DNSError); ok {
+			// Okay as well.
 		} else {
-			c.Errorf("Test should have errored but it seems to have succeeded")
+			c.Errorf("Non-S3 error: %s", result.error)
 		}
 	}
 }
@@ -336,6 +347,7 @@ func (s *ClientTests) TestDoublePutBucket(c *C) {
 
 func (s *ClientTests) TestBucketList(c *C) {
 	b := testBucket(s.s3)
+	defer b.DelBucket()
 	err := b.PutBucket(s3.Private)
 	c.Assert(err, IsNil)
 

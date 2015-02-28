@@ -30,8 +30,10 @@ func (s *S) SetUpSuite(c *C) {
 	testServer.Start()
 	s.s3 = s3.New(
 		aws.Auth{"abc", "123"},
-		aws.Region{Name: "faux-region-1", S3Endpoint: testServer.URL, Sign: aws.SignV2},
-		aws.SignV2,
+		aws.Region{
+			Name:       "faux-region-1",
+			S3Endpoint: testServer.URL,
+		},
 	)
 }
 

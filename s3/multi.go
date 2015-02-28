@@ -63,12 +63,25 @@ func (b *Bucket) ListMulti(prefix, delim string) (multis []*Multi, prefixes []st
 	query.Add("delimiter", delim)
 	req.URL.RawQuery = query.Encode()
 
-	for attempt := attempts.Start(); attempt.Next(); attempt = attempts.Start() {
+	addAmazonDateHeader(req.Header)
 
-		// We need to resign every iteration because we're changing variables.
-		b.S3.Sign(req, b.Auth)
+	// We need to resign every iteration because we're changing variables.
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return nil, nil, err
+	}
+
+	for attempt := attempts.Start(); attempt.Next(); {
+
 		resp, err := requestRetryLoop(req, attempts)
+		if err == nil {
+			if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+				err = buildError(resp)
+			}
+		}
 		if err != nil {
+			if shouldRetry(err) && attempt.HasNext() {
+				continue
+			}
 			return nil, nil, err
 		}
 
@@ -92,6 +105,9 @@ func (b *Bucket) ListMulti(prefix, delim string) (multis []*Multi, prefixes []st
 		query.Set("key-marker", multiResp.NextKeyMarker)
 		query.Set("upload-id-marker", multiResp.NextUploadIdMarker)
 		req.URL.RawQuery = query.Encode()
+
+		// Last request worked; restart our counter.
+		attempt = attempts.Start()
 	}
 
 	panic("unreachable")
@@ -126,19 +142,26 @@ func (b *Bucket) InitMulti(key string, contType string, perm ACL) (*Multi, error
 	req.URL.Path += key
 
 	query := req.URL.Query()
-	query.Add("upload", "")
+	query.Add("uploads", "")
 	req.URL.RawQuery = query.Encode()
 
 	req.Header.Add("Content-Type", contType)
 	req.Header.Add("Content-Length", "0")
 	req.Header.Add("x-amz-acl", string(perm))
+	addAmazonDateHeader(req.Header)
 
-	b.S3.Sign(req, b.Auth)
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return nil, err
+	}
+
 	resp, err := requestRetryLoop(req, attempts)
+	if err == nil {
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			err = buildError(resp)
+		}
+	}
 	if err != nil {
 		return nil, err
-	} else if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return nil, buildError(resp)
 	}
 
 	var multiResp struct {
@@ -183,8 +206,11 @@ func (m *Multi) putPart(n int, r io.ReadSeeker, partSize int64, md5b64 string) (
 	req.URL.RawQuery = query.Encode()
 
 	req.Header.Add("Content-MD5", md5b64)
+	addAmazonDateHeader(req.Header)
 
-	m.Bucket.S3.Sign(req, m.Bucket.Auth)
+	if err := m.Bucket.S3.Sign(req, m.Bucket.Auth); err != nil {
+		return Part{}, err
+	}
 	resp, err := requestRetryLoop(req, attempts)
 	defer resp.Body.Close()
 
@@ -259,10 +285,14 @@ func (m *Multi) ListParts() ([]Part, error) {
 	req.URL.RawQuery = query.Encode()
 
 	var parts partSlice
-	for attempt := attempts.Start(); attempt.Next(); attempt = attempts.Start() {
+	for attempt := attempts.Start(); attempt.Next(); {
+
+		addAmazonDateHeader(req.Header)
 
 		// We need to resign every iteration because we're changing the URL.
-		m.Bucket.S3.Sign(req, m.Bucket.Auth)
+		if err := m.Bucket.S3.Sign(req, m.Bucket.Auth); err != nil {
+			return nil, err
+		}
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -290,6 +320,9 @@ func (m *Multi) ListParts() ([]Part, error) {
 
 		query.Set("part-number-marker", listResp.NextPartNumberMarker)
 		req.URL.RawQuery = query.Encode()
+
+		// Last request worked; restart our counter.
+		attempt = attempts.Start()
 	}
 
 	sort.Sort(parts)
@@ -405,9 +438,20 @@ func (m *Multi) Complete(parts []Part) error {
 	query.Add("uploadId", m.UploadId)
 	req.URL.RawQuery = query.Encode()
 
-	m.Bucket.S3.Sign(req, m.Bucket.Auth)
-	_, err = requestRetryLoop(req, attempts)
-	return err
+	addAmazonDateHeader(req.Header)
+
+	if err := m.Bucket.S3.Sign(req, m.Bucket.Auth); err != nil {
+		return err
+	}
+	resp, err := requestRetryLoop(req, attempts)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return buildError(resp)
+	}
+
+	return nil
 }
 
 // Abort deletes an unifinished multipart upload and any previously
@@ -437,7 +481,11 @@ func (m *Multi) Abort() error {
 	query.Add("uploadId", m.UploadId)
 	req.URL.RawQuery = query.Encode()
 
-	m.Bucket.S3.Sign(req, m.Bucket.Auth)
+	addAmazonDateHeader(req.Header)
+
+	if err := m.Bucket.S3.Sign(req, m.Bucket.Auth); err != nil {
+		return err
+	}
 	_, err = requestRetryLoop(req, attempts)
 	return err
 }

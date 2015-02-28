@@ -31,7 +31,7 @@ const debug = false
 type S3 struct {
 	aws.Auth
 	aws.Region
-	aws.Signer
+	Sign    aws.Signer
 	private byte // Reserve the right of using private data.
 }
 
@@ -68,8 +68,8 @@ func RetryAttempts(retry bool) {
 }
 
 // New creates a new S3.
-func New(auth aws.Auth, region aws.Region, signer aws.Signer) *S3 {
-	return &S3{auth, region, signer, 0}
+func New(auth aws.Auth, region aws.Region) *S3 {
+	return &S3{auth, region, aws.SignV4Factory(region.Name, "s3"), 0}
 }
 
 // Bucket returns a Bucket with the given name.
@@ -129,9 +129,12 @@ func (b *Bucket) PutBucket(perm ACL) error {
 	}
 	req.Close = true
 
+	addAmazonDateHeader(req.Header)
 	req.Header.Add("x-amz-acl", string(perm))
 
-	b.Sign(req, b.Auth)
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return err
+	}
 	_, err = http.DefaultClient.Do(req)
 	return err
 }
@@ -147,8 +150,11 @@ func (b *Bucket) DelBucket() (err error) {
 		return err
 	}
 	req.Close = true
+	addAmazonDateHeader(req.Header)
 
-	b.Sign(req, b.Auth)
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return err
+	}
 	_, err = requestRetryLoop(req, attempts)
 	return err
 }
@@ -161,9 +167,9 @@ func (b *Bucket) Get(path string) (data []byte, err error) {
 	if err != nil {
 		return nil, err
 	}
-	data, err = ioutil.ReadAll(body)
-	body.Close()
-	return data, err
+	defer body.Close()
+
+	return ioutil.ReadAll(body)
 }
 
 // GetReader retrieves an object from an S3 bucket. It is the caller's
@@ -177,7 +183,12 @@ func (b *Bucket) GetReader(path string) (rc io.ReadCloser, err error) {
 	req.Close = true
 	req.URL.Path += path
 
-	b.S3.Sign(req, b.Auth)
+	addAmazonDateHeader(req.Header)
+
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return nil, err
+	}
+
 	resp, err := requestRetryLoop(req, attempts)
 	if err != nil {
 		return nil, err
@@ -199,21 +210,32 @@ func (b *Bucket) PutReader(path string, r io.Reader, length int64, contType stri
 // from r until EOF.
 func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, contType string, perm ACL, hdrs http.Header) error {
 
-	req, err := http.NewRequest("PUT", b.ResolveS3BucketEndpoint(b.Name), r)
+	req, err := http.NewRequest("PUT", b.Region.ResolveS3BucketEndpoint(b.Name), r)
 	if err != nil {
 		return err
 	}
 	req.Header = hdrs
 	req.Close = true
 	req.URL.Path += path
+	req.ContentLength = length
 
-	req.Header.Add("Content-Length", strconv.FormatInt(length, 10))
 	req.Header.Add("Content-Type", contType)
 	req.Header.Add("x-amz-acl", string(perm))
+	addAmazonDateHeader(req.Header)
 
-	b.Sign(req, b.Auth)
-	_, err = http.DefaultClient.Do(req)
-	return err
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return err
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return buildError(resp)
+	}
+
+	return nil
 }
 
 // Del removes an object from the S3 bucket.
@@ -228,7 +250,12 @@ func (b *Bucket) Del(path string) error {
 	req.Close = true
 	req.URL.Path += path
 
-	b.Sign(req, b.Auth)
+	addAmazonDateHeader(req.Header)
+
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return err
+	}
+
 	_, err = http.DefaultClient.Do(req)
 
 	return err
@@ -335,16 +362,32 @@ func (b *Bucket) List(prefix, delim, marker string, max int) (*ListResp, error) 
 	}
 	req.URL.RawQuery = query.Encode()
 
-	b.Sign(req, b.Auth)
+	addAmazonDateHeader(req.Header)
+
+	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return nil, err
+	}
 
 	resp, err := requestRetryLoop(req, attempts)
+	if err == nil {
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+			err = buildError(resp)
+		}
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	var result ListResp
 	err = xml.NewDecoder(resp.Body).Decode(&result)
-	return &result, err
+	return &result, nil
+}
+
+// URL returns a non-signed URL that allows retriving the
+// object at path. It only works if the object is publicly
+// readable (see SignedURL).
+func (b *Bucket) URL(path string) string {
+	return b.ResolveS3BucketEndpoint(b.Name) + path
 }
 
 type request struct {
@@ -445,6 +488,9 @@ func requestRetryLoop(req *http.Request, retryStrat aws.AttemptStrategy) (*http.
 
 	for attempt := attempts.Start(); attempt.Next(); {
 
+		if debug {
+			log.Printf("Full URL (in loop): %v", req.URL)
+		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			if shouldRetry(err) && attempt.HasNext() {
@@ -453,8 +499,16 @@ func requestRetryLoop(req *http.Request, retryStrat aws.AttemptStrategy) (*http.
 			return nil, err
 		}
 
+		if debug {
+			log.Printf("Full response (in loop): %v", resp)
+		}
+
 		return resp, nil
 	}
 
-	panic("could not complete the request within the specified retry attempts")
+	return nil, fmt.Errorf("could not complete the request within the specified retry attempts")
+}
+
+func addAmazonDateHeader(header http.Header) {
+	header.Set("x-amz-date", time.Now().In(time.UTC).Format(aws.ISO8601BasicFormat))
 }
