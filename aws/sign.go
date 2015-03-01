@@ -244,10 +244,8 @@ func canonicalHeaders(sortedHeaderNames []string, host string, hdr http.Header) 
 
 	for _, hName := range sortedHeaderNames {
 
-		var hdrVals string
-		if hName == "host" {
-			hdrVals = host
-		} else {
+		hdrVals := host
+		if hName != "host" {
 			canonHdrKey := http.CanonicalHeaderKey(hName)
 			sortedHdrVals := hdr[canonHdrKey]
 			sort.Strings(sortedHdrVals)
@@ -267,16 +265,17 @@ func canonicalHeaders(sortedHeaderNames []string, host string, hdr http.Header) 
 // Returns a SHA256 checksum of the request body. Represented as a
 // lowercase hexadecimal string.
 func payloadHash(req *http.Request, hasher hasher) (string, error) {
-	if req.Body != nil {
-		if b, err := ioutil.ReadAll(req.Body); err != nil {
-			return "", err
-		} else {
-			req.Body = ioutil.NopCloser(bytes.NewBuffer(b))
-			return hasher(b), nil
-		}
-	} else {
+	if req.Body == nil {
 		return hasher([]byte("")), nil
 	}
+
+	b, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		return "", err
+	}
+
+	req.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	return hasher(b), nil
 }
 
 // Retrieve the header names, lower-case them, and sort them.

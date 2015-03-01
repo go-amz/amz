@@ -70,6 +70,24 @@ func (s *S) TestPutBucket(c *C) {
 	c.Assert(req.Header["Date"], Not(Equals), "")
 }
 
+func (s *S) TestURL(c *C) {
+	testServer.Response(200, nil, "content")
+
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
+	url := b.URL("name")
+	r, err := http.Get(url)
+	c.Assert(err, IsNil)
+	data, err := ioutil.ReadAll(r.Body)
+	r.Body.Close()
+	c.Assert(err, IsNil)
+	c.Assert(string(data), Equals, "content")
+
+	req := testServer.WaitRequest()
+	c.Assert(req.Method, Equals, "GET")
+	c.Assert(req.URL.Path, Equals, "/bucket/name")
+}
+
 // DeleteBucket docs: http://goo.gl/GoBrY
 
 func (s *S) TestDelBucket(c *C) {

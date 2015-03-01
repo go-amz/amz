@@ -103,7 +103,7 @@ func testBucket(s *s3.S3) *s3.Bucket {
 		key,
 		// Add in the time element to help isolate tests from one
 		// another.
-		time.Now().Format("20060102T150405.999999999Z0700"),
+		time.Now().Format("20060102T150405.999999999"),
 	)))
 	if err != nil {
 		panic(err)

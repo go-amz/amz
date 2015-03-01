@@ -199,15 +199,15 @@ func (b *Bucket) GetReader(path string) (rc io.ReadCloser, err error) {
 	return resp.Body, nil
 }
 
-// Put inserts an object into the S3 bucket.
-//
-// See http://goo.gl/FEBPD for details.
+// PutReader inserts an object into the S3 bucket by consuming data
+// from r until EOF.
 func (b *Bucket) PutReader(path string, r io.Reader, length int64, contType string, perm ACL) error {
 	return b.PutReaderWithHeader(path, r, length, contType, perm, http.Header{})
 }
 
-// PutReader inserts an object into the S3 bucket by consuming data
-// from r until EOF.
+// PutReaderWithHeader inserts an object into the S3 bucket by
+// consuming data from r until EOF. It also adds the headers provided
+// to the request.
 func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, contType string, perm ACL, hdrs http.Header) error {
 
 	req, err := http.NewRequest("PUT", b.Region.ResolveS3BucketEndpoint(b.Name), r)

@@ -13,7 +13,14 @@ var _ = Suite(&SigningSuite{})
 
 type SigningSuite struct{}
 
-const v4skipReason = `"The signing methodology is a "one size fits all" approach. The hashes we check against don't include headers that are added in as requisite parts for S3. That doesn't mean the tests are invalid, or that signing is broken for these examples, but as long as we're adding heads in, it's impossible to know what the new signature should be. We should revaluate these later.`
+// TODO(katco-): The signing methodology is a "one size fits all"
+// approach. The hashes we check against don't include headers that
+// are added in as requisite parts for S3. That doesn't mean the tests
+// are invalid, or that signing is broken for these examples, but as
+// long as we're adding heads in, it's impossible to know what the new
+// signature should be. We should revaluate these later. See:
+// https://github.com/go-amz/amz/issues/29
+const v4skipReason = `Extra headers present - cannot predict generated signature (issue #29).`
 
 // EC2 ReST authentication docs: http://goo.gl/fQmAN
 var testAuth = Auth{"user", "secret"}
