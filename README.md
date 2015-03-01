@@ -3,24 +3,24 @@ goamz
 
 Go package to interact with Amazon Web Services
 
-[![Build Status](https://travis-ci.org/go-amz/amz.svg?branch=v3-unstable)](https://travis-ci.org/go-amz/amz) [![GoDoc](https://godoc.org/gopkg.in/amz.v3-unstable?status.png)](http://godoc.org/gopkg.in/amz.v3-unstable)
+[![Build Status](https://travis-ci.org/go-amz/amz.svg?branch=v4-unstable)](https://travis-ci.org/go-amz/amz) [![GoDoc](https://godoc.org/gopkg.in/amz.v4-unstable?status.png)](http://godoc.org/gopkg.in/amz.v4-unstable)
 
-**NOTE**: This is an *unstable* development branch. Please, do not use it for production code. Instead, use [**v1**](https://github.com/go-amz/amz/tree/v1) or [**v2**](https://github.com/go-amz/amz/tree/v2) branches.
+**NOTE**: This is an *unstable* development branch. Please, do not use it for production code. Instead, use one of the stable branches, like `v1`, `v2`, or `v3`.
 
 Instructions
 ------------
 
 Install the package with:
 
-    go get gopkg.in/amz.v3-unstable/...
+    go get gopkg.in/amz.v4-unstable/...
 
 Import it with:
 
-    import "gopkg.in/amz.v3-unstable/<package>"
+    import "gopkg.in/amz.v4-unstable/<package>"
 
 Example:
 
-    import "gopkg.in/amz.v3-unstable/ec2"
+    import "gopkg.in/amz.v4-unstable/ec2"
 
 and use _ec2_ as the package name inside the code.
 The same applies to the other sub-packages: _aws_, _s3_, etc.
@@ -31,7 +31,7 @@ For more details, visit the project page:
 
 and the API documentation:
 
-* https://gopkg.in/amz.v3-unstable
+* https://gopkg.in/amz.v4-unstable
 
 Users Group
 -----------

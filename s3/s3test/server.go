@@ -19,7 +19,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/amz.v3-unstable/s3"
+	"gopkg.in/amz.v4-unstable/s3"
 )
 
 const debug = false

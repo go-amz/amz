@@ -5,7 +5,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v3-unstable/aws"
+	"gopkg.in/amz.v4-unstable/aws"
 )
 
 // Amazon must be used by all tested packages to determine whether to
