@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"gopkg.in/amz.v3-unstable/aws"
+	"gopkg.in/amz.v3/aws"
 )
 
 // ----------------------------------------------------------------------------

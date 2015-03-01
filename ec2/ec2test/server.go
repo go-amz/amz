@@ -18,7 +18,7 @@ import (
 	"sync"
 	"time"
 
-	"gopkg.in/amz.v3-unstable/ec2"
+	"gopkg.in/amz.v3/ec2"
 )
 
 const defaultXMLName = "http://ec2.amazonaws.com/doc/2014-10-01/"

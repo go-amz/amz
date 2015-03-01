@@ -6,9 +6,9 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v3-unstable/aws"
-	"gopkg.in/amz.v3-unstable/exp/mturk"
-	"gopkg.in/amz.v3-unstable/testutil"
+	"gopkg.in/amz.v3/aws"
+	"gopkg.in/amz.v3/exp/mturk"
+	"gopkg.in/amz.v3/testutil"
 )
 
 func Test(t *testing.T) {

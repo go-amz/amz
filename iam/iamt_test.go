@@ -3,9 +3,9 @@ package iam_test
 import (
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v3-unstable/aws"
-	"gopkg.in/amz.v3-unstable/iam"
-	"gopkg.in/amz.v3-unstable/iam/iamtest"
+	"gopkg.in/amz.v3/aws"
+	"gopkg.in/amz.v3/iam"
+	"gopkg.in/amz.v3/iam/iamtest"
 )
 
 // LocalServer represents a local ec2test fake server.
