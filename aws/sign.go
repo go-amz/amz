@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"sort"
@@ -15,11 +16,18 @@ import (
 	"time"
 )
 
+var debug = log.New(
+	// Remove the c-style comment header to front of line to debug information.
+	/*os.Stdout, //*/ ioutil.Discard,
+	"DEBUG: ",
+	log.LstdFlags,
+)
+
 type Signer func(*http.Request, Auth) error
 
 // Ensure our signers meet the interface
 var _ Signer = SignV2
-var _ Signer = SignV4Factory("")
+var _ Signer = SignV4Factory("", "")
 
 type hasher func([]byte) string
 
@@ -71,30 +79,30 @@ func SignV2(req *http.Request, auth Auth) (err error) {
 
 // SignV4Factory returns a version 4 Signer which will utilize the
 // given region name.
-func SignV4Factory(regionName string) Signer {
+func SignV4Factory(regionName, serviceName string) Signer {
 	return func(req *http.Request, auth Auth) error {
-		return SignV4(req, auth, regionName)
+		return SignV4(req, auth, regionName, serviceName)
 	}
 }
 
 // SignV4 signs an HTTP request utilizing version 4 of the AWS
 // signature, and the given credentials.
-func SignV4(req *http.Request, auth Auth, regionName string) (err error) {
+func SignV4(req *http.Request, auth Auth, regionName, svcName string) (err error) {
 
 	var reqTime time.Time
 	if reqTime, err = requestTime(req); err != nil {
 		return err
 	}
 
-	svcName := inferServiceName(req.URL)
+	// Remove any existing authorization headers as they will corrupt
+	// the signing.
+	delete(req.Header, "Authorization")
+	delete(req.Header, "authorization")
+
 	credScope := credentialScope(reqTime, regionName, svcName)
 
-	// There are several places in the algorithm that call for
-	// processing the headers sorted by name.
-	sortedHdrNames := sortHeaderNames(req.Header)
-
-	var canonReqHash string
-	if _, canonReqHash, err = canonicalRequest(req, sortedHdrNames, sha256Hasher); err != nil {
+	_, canonReqHash, sortedHdrNames, err := canonicalRequest(req, sha256Hasher)
+	if err != nil {
 		return err
 	}
 
@@ -105,6 +113,8 @@ func SignV4(req *http.Request, auth Auth, regionName string) (err error) {
 
 	key := signingKey(reqTime, auth.SecretKey, regionName, svcName)
 	signature := fmt.Sprintf("%x", hmacHasher(key, strToSign))
+
+	debug.Printf("strToSign:\n\"\"\"\n%s\n\"\"\"", strToSign)
 
 	var authHdrVal string
 	if authHdrVal, err = authHeaderString(
@@ -126,19 +136,23 @@ func SignV4(req *http.Request, auth Auth, regionName string) (err error) {
 // Returns the canonical request, and its hash.
 func canonicalRequest(
 	req *http.Request,
-	sortedHdrNames []string,
 	hasher hasher,
-) (canReq, canReqHash string, err error) {
-
-	var canHdr string
-	if canHdr, err = canonicalHeaders(sortedHdrNames, req.Header); err != nil {
-		return
-	}
+) (canReq, canReqHash string, sortedHdrNames []string, err error) {
 
 	var payHash string
 	if payHash, err = payloadHash(req, hasher); err != nil {
 		return
 	}
+	req.Header.Set("x-amz-content-sha256", payHash)
+
+	sortedHdrNames = sortHeaderNames(req.Header, "host")
+	var canHdr string
+	if canHdr, err = canonicalHeaders(sortedHdrNames, req.Host, req.Header); err != nil {
+		return
+	}
+
+	debug.Printf("canHdr:\n\"\"\"\n%s\n\"\"\"", canHdr)
+	debug.Printf("signedHeader: %s\n\n", strings.Join(sortedHdrNames, ";"))
 
 	var queryStr string
 	if queryStr, err = canonicalQueryString(req.URL.Query()); err != nil {
@@ -148,17 +162,18 @@ func canonicalRequest(
 	c := new(bytes.Buffer)
 	if err := errorCollector(
 		fprintfWrapper(c, "%s\n", requestMethodVerb(req.Method)),
-		fprintfWrapper(c, "%s\n", req.URL.RequestURI()),
+		fprintfWrapper(c, "%s\n", req.URL.Path),
 		fprintfWrapper(c, "%s\n", queryStr),
 		fprintfWrapper(c, "%s\n", canHdr),
 		fprintfWrapper(c, "%s\n", strings.Join(sortedHdrNames, ";")),
 		fprintfWrapper(c, "%s", payHash),
 	); err != nil {
-		return "", "", err
+		return "", "", nil, err
 	}
 
 	canReq = c.String()
-	return canReq, hasher([]byte(canReq)), nil
+	debug.Printf("canReq:\n\"\"\"\n%s\n\"\"\"", canReq)
+	return canReq, hasher([]byte(canReq)), sortedHdrNames, nil
 }
 
 // Task 2: Create a string to Sign
@@ -206,8 +221,8 @@ func authHeaderString(
 	w := new(bytes.Buffer)
 	if err := errorCollector(
 		fprintfWrapper(w, "AWS4-HMAC-SHA256 "),
-		fprintfWrapper(w, "Credential=%s/%s, ", accessKey, credScope),
-		fprintfWrapper(w, "SignedHeaders=%s, ", strings.Join(sortedHeaderNames, ";")),
+		fprintfWrapper(w, "Credential=%s/%s,", accessKey, credScope),
+		fprintfWrapper(w, "SignedHeaders=%s,", strings.Join(sortedHeaderNames, ";")),
 		fprintfWrapper(w, "Signature=%s", signature),
 	); err != nil {
 		return "", err
@@ -224,37 +239,49 @@ func canonicalQueryString(queryVals url.Values) (string, error) {
 	return strings.Replace(queryVals.Encode(), "+", "%20", -1), nil
 }
 
-func canonicalHeaders(sortedHeaderNames []string, hdr http.Header) (string, error) {
+func canonicalHeaders(sortedHeaderNames []string, host string, hdr http.Header) (string, error) {
 	buffer := new(bytes.Buffer)
 
 	for _, hName := range sortedHeaderNames {
-		canonHdrKey := http.CanonicalHeaderKey(hName)
-		sortedHdrVals := hdr[canonHdrKey]
-		sort.Strings(sortedHdrVals)
-		hdrVals := strings.Join(sortedHdrVals, ",")
+
+		hdrVals := host
+		if hName != "host" {
+			canonHdrKey := http.CanonicalHeaderKey(hName)
+			sortedHdrVals := hdr[canonHdrKey]
+			sort.Strings(sortedHdrVals)
+			hdrVals = strings.Join(sortedHdrVals, ",")
+		}
+
 		if _, err := fmt.Fprintf(buffer, "%s:%s\n", hName, hdrVals); err != nil {
 			return "", err
 		}
 	}
 
+	// There is intentionally a hanging newline at the end of the
+	// header list.
 	return buffer.String(), nil
 }
 
 // Returns a SHA256 checksum of the request body. Represented as a
 // lowercase hexadecimal string.
 func payloadHash(req *http.Request, hasher hasher) (string, error) {
-	if b, err := ioutil.ReadAll(req.Body); err != nil {
-		return "", err
-	} else {
-		req.Body = ioutil.NopCloser(bytes.NewBuffer(b))
-		return hasher(b), nil
+	if req.Body == nil {
+		return hasher([]byte("")), nil
 	}
+
+	b, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		return "", err
+	}
+
+	req.Body = ioutil.NopCloser(bytes.NewBuffer(b))
+	return hasher(b), nil
 }
 
 // Retrieve the header names, lower-case them, and sort them.
-func sortHeaderNames(header http.Header) []string {
+func sortHeaderNames(header http.Header, injectedNames ...string) []string {
 
-	var sortedNames []string
+	sortedNames := injectedNames
 	for hName, _ := range header {
 		sortedNames = append(sortedNames, strings.ToLower(hName))
 	}
@@ -268,10 +295,6 @@ func hmacHasher(key []byte, value string) []byte {
 	h := hmac.New(sha256.New, key)
 	h.Write([]byte(value))
 	return h.Sum(nil)
-}
-
-func inferServiceName(url *url.URL) string {
-	return strings.Split(url.Host, ".")[0]
 }
 
 func sha256Hasher(payload []byte) string {

@@ -25,7 +25,6 @@ func (s *LocalServer) SetUp(c *C) {
 		Name:                 "faux-region-1",
 		S3Endpoint:           srv.URL(),
 		S3LocationConstraint: true, // s3test server requires a LocationConstraint
-		Sign:                 aws.SignV2,
 	}
 }
 
@@ -54,9 +53,6 @@ var (
 func (s *LocalServerSuite) SetUpSuite(c *C) {
 	s.srv.SetUp(c)
 	s.clientTests.s3 = s3.New(s.srv.auth, s.srv.region)
-
-	// TODO Sadly the fake server ignores auth completely right now. :-(
-	s.clientTests.authIsBroken = true
 	s.clientTests.Cleanup()
 }
 

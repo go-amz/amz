@@ -28,8 +28,13 @@ var testServer = testutil.NewHTTPServer()
 
 func (s *S) SetUpSuite(c *C) {
 	testServer.Start()
-	auth := aws.Auth{"abc", "123"}
-	s.s3 = s3.New(auth, aws.Region{Name: "faux-region-1", S3Endpoint: testServer.URL, Sign: aws.SignV2})
+	s.s3 = s3.New(
+		aws.Auth{"abc", "123"},
+		aws.Region{
+			Name:       "faux-region-1",
+			S3Endpoint: testServer.URL,
+		},
+	)
 }
 
 func (s *S) TearDownSuite(c *C) {
@@ -54,8 +59,9 @@ func (s *S) TearDownTest(c *C) {
 func (s *S) TestPutBucket(c *C) {
 	testServer.Response(200, nil, "")
 
-	b := s.s3.Bucket("bucket")
-	err := b.PutBucket(s3.Private)
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
+	err = b.PutBucket(s3.Private)
 	c.Assert(err, IsNil)
 
 	req := testServer.WaitRequest()
@@ -64,42 +70,11 @@ func (s *S) TestPutBucket(c *C) {
 	c.Assert(req.Header["Date"], Not(Equals), "")
 }
 
-// DeleteBucket docs: http://goo.gl/GoBrY
-
-func (s *S) TestDelBucket(c *C) {
-	testServer.Response(204, nil, "")
-
-	b := s.s3.Bucket("bucket")
-	err := b.DelBucket()
-	c.Assert(err, IsNil)
-
-	req := testServer.WaitRequest()
-	c.Assert(req.Method, Equals, "DELETE")
-	c.Assert(req.URL.Path, Equals, "/bucket/")
-	c.Assert(req.Header["Date"], Not(Equals), "")
-}
-
-// GetObject docs: http://goo.gl/isCO7
-
-func (s *S) TestGet(c *C) {
-	testServer.Response(200, nil, "content")
-
-	b := s.s3.Bucket("bucket")
-	data, err := b.Get("name")
-
-	req := testServer.WaitRequest()
-	c.Assert(req.Method, Equals, "GET")
-	c.Assert(req.URL.Path, Equals, "/bucket/name")
-	c.Assert(req.Header["Date"], Not(Equals), "")
-
-	c.Assert(err, IsNil)
-	c.Assert(string(data), Equals, "content")
-}
-
 func (s *S) TestURL(c *C) {
 	testServer.Response(200, nil, "content")
 
-	b := s.s3.Bucket("bucket")
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
 	url := b.URL("name")
 	r, err := http.Get(url)
 	c.Assert(err, IsNil)
@@ -113,10 +88,45 @@ func (s *S) TestURL(c *C) {
 	c.Assert(req.URL.Path, Equals, "/bucket/name")
 }
 
+// DeleteBucket docs: http://goo.gl/GoBrY
+
+func (s *S) TestDelBucket(c *C) {
+	testServer.Response(204, nil, "")
+
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
+	err = b.DelBucket()
+	c.Assert(err, IsNil)
+
+	req := testServer.WaitRequest()
+	c.Assert(req.Method, Equals, "DELETE")
+	c.Assert(req.URL.Path, Equals, "/bucket/")
+	c.Assert(req.Header["Date"], Not(Equals), "")
+}
+
+// GetObject docs: http://goo.gl/isCO7
+
+func (s *S) TestGet(c *C) {
+	testServer.Response(200, nil, "content")
+
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
+	data, err := b.Get("name")
+
+	req := testServer.WaitRequest()
+	c.Assert(req.Method, Equals, "GET")
+	c.Assert(req.URL.Path, Equals, "/bucket/name")
+	c.Assert(req.Header["Date"], Not(Equals), "")
+
+	c.Assert(err, IsNil)
+	c.Assert(string(data), Equals, "content")
+}
+
 func (s *S) TestGetReader(c *C) {
 	testServer.Response(200, nil, "content")
 
-	b := s.s3.Bucket("bucket")
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
 	rc, err := b.GetReader("name")
 	c.Assert(err, IsNil)
 	data, err := ioutil.ReadAll(rc)
@@ -135,7 +145,8 @@ func (s *S) TestGetNotFound(c *C) {
 		testServer.Response(404, nil, GetObjectErrorDump)
 	}
 
-	b := s.s3.Bucket("non-existent-bucket")
+	b, err := s.s3.Bucket("non-existent-bucket")
+	c.Assert(err, IsNil)
 	data, err := b.Get("non-existent")
 
 	req := testServer.WaitRequest()
@@ -160,8 +171,9 @@ func (s *S) TestGetNotFound(c *C) {
 func (s *S) TestPutObject(c *C) {
 	testServer.Response(200, nil, "")
 
-	b := s.s3.Bucket("bucket")
-	err := b.Put("name", []byte("content"), "content-type", s3.Private)
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
+	err = b.Put("name", []byte("content"), "content-type", s3.Private)
 	c.Assert(err, IsNil)
 
 	req := testServer.WaitRequest()
@@ -177,9 +189,10 @@ func (s *S) TestPutObject(c *C) {
 func (s *S) TestPutReader(c *C) {
 	testServer.Response(200, nil, "")
 
-	b := s.s3.Bucket("bucket")
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
 	buf := bytes.NewBufferString("content")
-	err := b.PutReader("name", buf, int64(buf.Len()), "content-type", s3.Private)
+	err = b.PutReader("name", buf, int64(buf.Len()), "content-type", s3.Private)
 	c.Assert(err, IsNil)
 
 	req := testServer.WaitRequest()
@@ -195,9 +208,10 @@ func (s *S) TestPutReader(c *C) {
 func (s *S) TestPutReaderWithHeader(c *C) {
 	testServer.Response(200, nil, "")
 
-	b := s.s3.Bucket("bucket")
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
 	buf := bytes.NewBufferString("content")
-	err := b.PutReaderWithHeader("name", buf, int64(buf.Len()), "content-type", s3.Private, http.Header{
+	err = b.PutReaderWithHeader("name", buf, int64(buf.Len()), "content-type", s3.Private, http.Header{
 		"Cache-Control": []string{"max-age=5"},
 	})
 	c.Assert(err, IsNil)
@@ -217,8 +231,9 @@ func (s *S) TestPutReaderWithHeader(c *C) {
 func (s *S) TestDelObject(c *C) {
 	testServer.Response(200, nil, "")
 
-	b := s.s3.Bucket("bucket")
-	err := b.Del("name")
+	b, err := s.s3.Bucket("bucket")
+	c.Assert(err, IsNil)
+	err = b.Del("name")
 	c.Assert(err, IsNil)
 
 	req := testServer.WaitRequest()
@@ -232,7 +247,8 @@ func (s *S) TestDelObject(c *C) {
 func (s *S) TestList(c *C) {
 	testServer.Response(200, nil, GetListResultDump1)
 
-	b := s.s3.Bucket("quotes")
+	b, err := s.s3.Bucket("quotes")
+	c.Assert(err, IsNil)
 
 	data, err := b.List("N", "", "", 0)
 	c.Assert(err, IsNil)
@@ -271,7 +287,8 @@ func (s *S) TestList(c *C) {
 func (s *S) TestListWithDelimiter(c *C) {
 	testServer.Response(200, nil, GetListResultDump2)
 
-	b := s.s3.Bucket("quotes")
+	b, err := s.s3.Bucket("quotes")
+	c.Assert(err, IsNil)
 
 	data, err := b.List("photos/2006/", "/", "some-marker", 1000)
 	c.Assert(err, IsNil)

@@ -40,7 +40,7 @@ func (s *LocalServer) SetUp(c *C) {
 	})
 
 	s.srv = srv
-	s.region = aws.Region{EC2Endpoint: srv.URL(), Sign: aws.SignV2}
+	s.region = aws.Region{EC2Endpoint: srv.URL()}
 }
 
 // LocalServerSuite defines tests that will run
@@ -58,8 +58,8 @@ var _ = Suite(&LocalServerSuite{})
 
 func (s *LocalServerSuite) SetUpSuite(c *C) {
 	s.srv.SetUp(c)
-	s.ServerTests.ec2 = ec2.New(s.srv.auth, s.srv.region)
-	s.clientTests.ec2 = ec2.New(s.srv.auth, s.srv.region)
+	s.ServerTests.ec2 = ec2.New(s.srv.auth, s.srv.region, aws.SignV2)
+	s.clientTests.ec2 = ec2.New(s.srv.auth, s.srv.region, aws.SignV2)
 }
 
 func (s *LocalServerSuite) TestRunAndTerminate(c *C) {
@@ -220,7 +220,7 @@ func (s *AmazonServerSuite) SetUpSuite(c *C) {
 		c.Skip("AmazonServerSuite tests not enabled")
 	}
 	s.srv.SetUp(c)
-	s.ServerTests.ec2 = ec2.New(s.srv.auth, aws.USEast)
+	s.ServerTests.ec2 = ec2.New(s.srv.auth, aws.USEast, aws.SignV2)
 }
 
 // ServerTests defines a set of tests designed to test

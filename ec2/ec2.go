@@ -39,12 +39,13 @@ const (
 type EC2 struct {
 	aws.Auth
 	aws.Region
+	Sign    aws.Signer
 	private byte // Reserve the right of using private data.
 }
 
 // New creates a new EC2.
-func New(auth aws.Auth, region aws.Region) *EC2 {
-	return &EC2{auth, region, 0}
+func New(auth aws.Auth, region aws.Region, signer aws.Signer) *EC2 {
+	return &EC2{auth, region, signer, 0}
 }
 
 // ----------------------------------------------------------------------------
@@ -142,7 +143,7 @@ func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
 	query.Add("Timestamp", timeNow().In(time.UTC).Format(time.RFC3339))
 	req.URL.RawQuery = query.Encode()
 
-	ec2.Region.Sign(req, ec2.Auth)
+	ec2.Sign(req, ec2.Auth)
 
 	r, err := http.DefaultClient.Do(req)
 	if err != nil {
