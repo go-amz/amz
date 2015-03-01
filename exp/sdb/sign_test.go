@@ -3,8 +3,8 @@ package sdb_test
 import (
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v3-unstable/aws"
-	"gopkg.in/amz.v3-unstable/exp/sdb"
+	"gopkg.in/amz.v3/aws"
+	"gopkg.in/amz.v3/exp/sdb"
 )
 
 // SimpleDB ReST authentication docs: http://goo.gl/CaY81
