@@ -23,7 +23,7 @@ import (
 	"strconv"
 	"time"
 
-	"gopkg.in/amz.v3-unstable/aws"
+	"gopkg.in/amz.v4-unstable/aws"
 )
 
 type MTurk struct {

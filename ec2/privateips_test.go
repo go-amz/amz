@@ -14,8 +14,8 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v3-unstable/aws"
-	"gopkg.in/amz.v3-unstable/ec2"
+	"gopkg.in/amz.v4-unstable/aws"
+	"gopkg.in/amz.v4-unstable/ec2"
 )
 
 // Private IP tests with example responses

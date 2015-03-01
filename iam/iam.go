@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"gopkg.in/amz.v3-unstable/aws"
+	"gopkg.in/amz.v4-unstable/aws"
 )
 
 // The IAM type encapsulates operations operations with the IAM endpoint.

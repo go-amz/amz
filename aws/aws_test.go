@@ -7,7 +7,7 @@ import (
 
 	. "gopkg.in/check.v1"
 
-	"gopkg.in/amz.v3-unstable/aws"
+	"gopkg.in/amz.v4-unstable/aws"
 )
 
 func Test(t *testing.T) {
