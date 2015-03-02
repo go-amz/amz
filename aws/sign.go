@@ -85,6 +85,46 @@ func SignV4Factory(regionName, serviceName string) Signer {
 	}
 }
 
+func SignV4URL(req *http.Request, auth Auth, regionName, svcName string, expires time.Duration) error {
+	reqTime, err := requestTime(req)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Del("date")
+
+	credScope := credentialScope(reqTime, regionName, svcName)
+
+	queryVals := req.URL.Query()
+	queryVals.Set("X-Amz-Algorithm", "AWS4-HMAC-SHA256")
+	queryVals.Set("X-Amz-Credential", auth.AccessKey+"/"+credScope)
+	queryVals.Set("X-Amz-Date", reqTime.Format(ISO8601BasicFormat))
+	queryVals.Set("X-Amz-Expires", fmt.Sprintf("%d", int(expires.Seconds())))
+	queryVals.Set("X-Amz-SignedHeaders", "host")
+	req.URL.RawQuery = queryVals.Encode()
+
+	_, canonReqHash, _, err := canonicalRequest(req, sha256Hasher, false)
+	if err != nil {
+		return err
+	}
+
+	var strToSign string
+	if strToSign, err = stringToSign(reqTime, canonReqHash, credScope); err != nil {
+		return err
+	}
+
+	key := signingKey(reqTime, auth.SecretKey, regionName, svcName)
+	signature := fmt.Sprintf("%x", hmacHasher(key, strToSign))
+
+	debug.Printf("strToSign:\n\"\"\"\n%s\n\"\"\"", strToSign)
+
+	queryVals.Set("X-Amz-Signature", signature)
+
+	req.URL.RawQuery = queryVals.Encode()
+
+	return nil
+}
+
 // SignV4 signs an HTTP request utilizing version 4 of the AWS
 // signature, and the given credentials.
 func SignV4(req *http.Request, auth Auth, regionName, svcName string) (err error) {
@@ -101,7 +141,7 @@ func SignV4(req *http.Request, auth Auth, regionName, svcName string) (err error
 
 	credScope := credentialScope(reqTime, regionName, svcName)
 
-	_, canonReqHash, sortedHdrNames, err := canonicalRequest(req, sha256Hasher)
+	_, canonReqHash, sortedHdrNames, err := canonicalRequest(req, sha256Hasher, true)
 	if err != nil {
 		return err
 	}
@@ -137,13 +177,16 @@ func SignV4(req *http.Request, auth Auth, regionName, svcName string) (err error
 func canonicalRequest(
 	req *http.Request,
 	hasher hasher,
+	calcPayHash bool,
 ) (canReq, canReqHash string, sortedHdrNames []string, err error) {
 
-	var payHash string
-	if payHash, err = payloadHash(req, hasher); err != nil {
-		return
+	payHash := "UNSIGNED-PAYLOAD"
+	if calcPayHash {
+		if payHash, err = payloadHash(req, hasher); err != nil {
+			return
+		}
+		req.Header.Set("x-amz-content-sha256", payHash)
 	}
-	req.Header.Set("x-amz-content-sha256", payHash)
 
 	sortedHdrNames = sortHeaderNames(req.Header, "host")
 	var canHdr string
