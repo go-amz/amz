@@ -91,6 +91,20 @@ func (s *S) TestSubnetsExample(c *C) {
 	c.Check(subnet.Tags, HasLen, 0)
 }
 
+func (s *S) TestModifySubnetAttributeExample(c *C) {
+	testServer.Response(200, nil, ModifySubnetAttributeExample)
+
+	resp, err := s.ec2.ModifySubnetAttribute("subnet-1a2b3c4d", "MapPublicIpOnLaunch", "true")
+	req := testServer.WaitRequest()
+
+	c.Assert(req.Form["Action"], DeepEquals, []string{"ModifySubnetAttribute"})
+	c.Assert(req.Form["SubnetId"], DeepEquals, []string{"subnet-1a2b3c4d"})
+	c.Assert(req.Form["MapPublicIpOnLaunch.Value"], DeepEquals, []string{"true"})
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
+}
+
 // Subnet tests run against either a local test server or live on EC2.
 
 func (s *ServerTests) TestSubnets(c *C) {
@@ -100,12 +114,12 @@ func (s *ServerTests) TestSubnets(c *C) {
 	defer s.deleteVPCs(c, []string{vpcId})
 
 	resp1 := s.createSubnet(c, vpcId, "10.2.1.0/24", "")
-	assertSubnet(c, resp1.Subnet, "", vpcId, "10.2.1.0/24")
+	assertSubnet(c, resp1.Subnet, "", vpcId, "10.2.1.0/24", false)
 	id1 := resp1.Subnet.Id
 
 	resp2, err := s.ec2.CreateSubnet(vpcId, "10.2.2.0/24", "")
 	c.Assert(err, IsNil)
-	assertSubnet(c, resp2.Subnet, "", vpcId, "10.2.2.0/24")
+	assertSubnet(c, resp2.Subnet, "", vpcId, "10.2.2.0/24", false)
 	id2 := resp2.Subnet.Id
 
 	// We only check for the subnets we just created, because the user
@@ -131,10 +145,10 @@ func (s *ServerTests) TestSubnets(c *C) {
 			c.Logf("found subnet %v", subnet)
 			switch subnet.Id {
 			case id1:
-				assertSubnet(c, subnet, id1, vpcId, resp1.Subnet.CIDRBlock)
+				assertSubnet(c, subnet, id1, vpcId, resp1.Subnet.CIDRBlock, false)
 				found++
 			case id2:
-				assertSubnet(c, subnet, id2, vpcId, resp2.Subnet.CIDRBlock)
+				assertSubnet(c, subnet, id2, vpcId, resp2.Subnet.CIDRBlock, false)
 				found++
 			}
 			if found == 2 {
@@ -151,17 +165,20 @@ func (s *ServerTests) TestSubnets(c *C) {
 		c.Fatalf("timeout while waiting for subnets %v", []string{id1, id2})
 	}
 
+	_, err = s.ec2.ModifySubnetAttribute(id1, "MapPublicIpOnLaunch", "true")
+	c.Assert(err, IsNil)
+
 	list, err = s.ec2.Subnets([]string{id1}, nil)
 	c.Assert(err, IsNil)
 	c.Assert(list.Subnets, HasLen, 1)
-	assertSubnet(c, list.Subnets[0], id1, vpcId, resp1.Subnet.CIDRBlock)
+	assertSubnet(c, list.Subnets[0], id1, vpcId, resp1.Subnet.CIDRBlock, true)
 
 	f := ec2.NewFilter()
 	f.Add("cidr", resp2.Subnet.CIDRBlock)
 	list, err = s.ec2.Subnets(nil, f)
 	c.Assert(err, IsNil)
 	c.Assert(list.Subnets, HasLen, 1)
-	assertSubnet(c, list.Subnets[0], id2, vpcId, resp2.Subnet.CIDRBlock)
+	assertSubnet(c, list.Subnets[0], id2, vpcId, resp2.Subnet.CIDRBlock, false)
 
 	_, err = s.ec2.DeleteSubnet(id1)
 	c.Assert(err, IsNil)
@@ -233,7 +250,7 @@ func (s *ServerTests) deleteSubnets(c *C, ids []string) {
 	c.Fatalf("timeout while waiting %v subnets to get deleted!", ids)
 }
 
-func assertSubnet(c *C, obtained ec2.Subnet, expectId, expectVpcId, expectCidr string) {
+func assertSubnet(c *C, obtained ec2.Subnet, expectId, expectVpcId, expectCidr string, expectMapIP bool) {
 	if expectId != "" {
 		c.Check(obtained.Id, Equals, expectId)
 	} else {
@@ -253,5 +270,5 @@ func assertSubnet(c *C, obtained ec2.Subnet, expectId, expectVpcId, expectCidr s
 	c.Check(obtained.AvailZone, Not(Equals), "")
 	c.Check(obtained.AvailableIPCount, Not(Equals), 0)
 	c.Check(obtained.DefaultForAZ, Equals, false)
-	c.Check(obtained.MapPublicIPOnLaunch, Equals, false)
+	c.Check(obtained.MapPublicIPOnLaunch, Equals, expectMapIP)
 }
