@@ -1,10 +1,16 @@
 package s3
 
 import (
+	"net/http"
+
 	"gopkg.in/amz.v3/aws"
 )
 
 var originalStrategy = attempts
+
+func BuildError(resp *http.Response) error {
+	return buildError(resp)
+}
 
 func SetAttemptStrategy(s *aws.AttemptStrategy) {
 	if s == nil {
