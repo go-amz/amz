@@ -24,7 +24,7 @@ type Region struct {
 	S3BucketEndpoint     string // Not needed by AWS S3. Use ${bucket} for bucket name.
 	S3LocationConstraint bool   // true if this region requires a LocationConstraint declaration.
 	S3LowercaseBucket    bool   // true if the region requires bucket names to be lower case.
-	SDBEndpoint          string
+	SDBEndpoint          string // not all regions have simpleDB, fro eg. Frankfurt (eu-central-1) does not
 	SNSEndpoint          string
 	SQSEndpoint          string
 	IAMEndpoint          string
@@ -38,7 +38,7 @@ func (r Region) ResolveS3BucketEndpoint(bucketName string) string {
 }
 
 var USEast = Region{
-	"us-east-1",
+	"us-east-1", // US East (N. Virginia)
 	"https://ec2.us-east-1.amazonaws.com",
 	"https://s3.amazonaws.com",
 	"",
@@ -51,7 +51,7 @@ var USEast = Region{
 }
 
 var USWest = Region{
-	"us-west-1",
+	"us-west-1", //US West (N. California)
 	"https://ec2.us-west-1.amazonaws.com",
 	"https://s3-us-west-1.amazonaws.com",
 	"",
@@ -64,7 +64,7 @@ var USWest = Region{
 }
 
 var USWest2 = Region{
-	"us-west-2",
+	"us-west-2", // US West (Oregon)
 	"https://ec2.us-west-2.amazonaws.com",
 	"https://s3-us-west-2.amazonaws.com",
 	"",
@@ -76,8 +76,21 @@ var USWest2 = Region{
 	"https://iam.amazonaws.com",
 }
 
+var USGovWest = Region{
+	"us-gov-west-1", // Isolated regions, AWS GovCloud (US)
+	"https://ec2.us-gov-west-1.amazonaws.com",
+	"https://s3-us-gov-west-1.amazonaws.com",
+	"",
+	true,
+	true,
+	"",
+	"https://sns.us-gov-west-1.amazonaws.com",
+	"https://sqs.us-gov-west-1.amazonaws.com",
+	"https://iam.us-gov.amazonaws.com",
+}
+
 var EUWest = Region{
-	"eu-west-1",
+	"eu-west-1", // EU (Ireland)
 	"https://ec2.eu-west-1.amazonaws.com",
 	"https://s3-eu-west-1.amazonaws.com",
 	"",
@@ -89,8 +102,21 @@ var EUWest = Region{
 	"https://iam.amazonaws.com",
 }
 
+var EUCentral = Region{
+	"eu-central-1", // EU (Frankfurt)
+	"https://ec2.eu-central-1.amazonaws.com",
+	"https://s3-eu-central-1.amazonaws.com",
+	"",
+	true,
+	true,
+	"",
+	"https://sns.eu-central-1.amazonaws.com",
+	"https://sqs.eu-central-1.amazonaws.com",
+	"https://iam.amazonaws.com",
+}
+
 var APSoutheast = Region{
-	"ap-southeast-1",
+	"ap-southeast-1", // Asia Pacific (Singapore)
 	"https://ec2.ap-southeast-1.amazonaws.com",
 	"https://s3-ap-southeast-1.amazonaws.com",
 	"",
@@ -103,7 +129,7 @@ var APSoutheast = Region{
 }
 
 var APSoutheast2 = Region{
-	"ap-southeast-2",
+	"ap-southeast-2", //Asia Pacific (Sydney)
 	"https://ec2.ap-southeast-2.amazonaws.com",
 	"https://s3-ap-southeast-2.amazonaws.com",
 	"",
@@ -116,7 +142,7 @@ var APSoutheast2 = Region{
 }
 
 var APNortheast = Region{
-	"ap-northeast-1",
+	"ap-northeast-1", //Asia Pacific (Tokyo)
 	"https://ec2.ap-northeast-1.amazonaws.com",
 	"https://s3-ap-northeast-1.amazonaws.com",
 	"",
@@ -129,7 +155,7 @@ var APNortheast = Region{
 }
 
 var SAEast = Region{
-	"sa-east-1",
+	"sa-east-1", // South America (Sao Paulo)
 	"https://ec2.sa-east-1.amazonaws.com",
 	"https://s3-sa-east-1.amazonaws.com",
 	"",
@@ -142,7 +168,7 @@ var SAEast = Region{
 }
 
 var CNNorth = Region{
-	"cn-north-1",
+	"cn-north-1", // Isolated regions, China (Beijing)
 	"https://ec2.cn-north-1.amazonaws.com.cn",
 	"https://s3.cn-north-1.amazonaws.com.cn",
 	"",
@@ -151,7 +177,7 @@ var CNNorth = Region{
 	"https://sdb.cn-north-1.amazonaws.com.cn",
 	"https://sns.cn-north-1.amazonaws.com.cn",
 	"https://sqs.cn-north-1.amazonaws.com.cn",
-	"https://iam.amazonaws.com.cn",
+	"https://iam.cn-north-1.amazonaws.com.cn",
 }
 
 var Regions = map[string]Region{
@@ -159,9 +185,11 @@ var Regions = map[string]Region{
 	APSoutheast.Name:  APSoutheast,
 	APSoutheast2.Name: APSoutheast2,
 	EUWest.Name:       EUWest,
+	EUCentral.Name:    EUCentral,
 	USEast.Name:       USEast,
 	USWest.Name:       USWest,
 	USWest2.Name:      USWest2,
+	USGovWest.Name:    USGovWest,
 	SAEast.Name:       SAEast,
 	CNNorth.Name:      CNNorth,
 }
