@@ -177,12 +177,7 @@ var CNNorth = Region{
 	"https://sdb.cn-north-1.amazonaws.com.cn",
 	"https://sns.cn-north-1.amazonaws.com.cn",
 	"https://sqs.cn-north-1.amazonaws.com.cn",
-	// TODO (anastasiamac 2015-03-05) should this not be
-	// https://iam.cn-north-1.amazonaws.com.cn
-	// ??
-	// I am looking at http://docs.aws.amazon.com/general/latest/gr/isolated_regions.html
-	// and it seems to be different to everything else...
-	"https://iam.amazonaws.com.cn",
+	"https://iam.cn-north-1.amazonaws.com.cn",
 }
 
 var Regions = map[string]Region{
