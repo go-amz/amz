@@ -1,3 +1,16 @@
+//
+// goamz - Go packages to interact with the Amazon Web Services.
+//
+//   https://wiki.ubuntu.com/goamz
+//
+// Copyright (c) 2011 Canonical Ltd.
+//
+// Written by Graham Miller <graham.miller@gmail.com>
+
+// This package is in an experimental state, and does not currently
+// follow conventions and style of the rest of goamz or common
+// Go conventions. It must be polished before it's considered a
+// first-class package in goamz.
 package mturk_test
 
 import (
