@@ -29,7 +29,7 @@ type Signer func(*http.Request, Auth) error
 var _ Signer = SignV2
 var _ Signer = SignV4Factory("", "")
 
-type hasher func([]byte) string
+type hasher func(io.Reader) (string, error)
 
 const (
 	ISO8601BasicFormat      = "20060102T150405Z"
@@ -216,7 +216,9 @@ func canonicalRequest(
 
 	canReq = c.String()
 	debug.Printf("canReq:\n\"\"\"\n%s\n\"\"\"", canReq)
-	return canReq, hasher([]byte(canReq)), sortedHdrNames, nil
+	canReqHash, err = hasher(bytes.NewBuffer([]byte(canReq)))
+
+	return canReq, canReqHash, sortedHdrNames, err
 }
 
 // Task 2: Create a string to Sign
@@ -309,16 +311,10 @@ func canonicalHeaders(sortedHeaderNames []string, host string, hdr http.Header) 
 // lowercase hexadecimal string.
 func payloadHash(req *http.Request, hasher hasher) (string, error) {
 	if req.Body == nil {
-		return hasher([]byte("")), nil
+		return hasher(bytes.NewBuffer(nil))
 	}
 
-	b, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		return "", err
-	}
-
-	req.Body = ioutil.NopCloser(bytes.NewBuffer(b))
-	return hasher(b), nil
+	return hasher(req.Body)
 }
 
 // Retrieve the header names, lower-case them, and sort them.
@@ -340,8 +336,11 @@ func hmacHasher(key []byte, value string) []byte {
 	return h.Sum(nil)
 }
 
-func sha256Hasher(payload []byte) string {
-	return fmt.Sprintf("%x", sha256.Sum256(payload))
+func sha256Hasher(payloadReader io.Reader) (string, error) {
+	hasher := sha256.New()
+	_, err := io.Copy(hasher, payloadReader)
+
+	return fmt.Sprintf("%x", hasher.Sum(nil)), err
 }
 
 func credentialScope(t time.Time, regionName, svcName string) string {

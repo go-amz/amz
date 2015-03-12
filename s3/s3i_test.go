@@ -198,7 +198,7 @@ func (s *ClientTests) TestBasicFunctionality(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(string(data), Equals, "yo!")
 
-	buf := bytes.NewBufferString("hey!")
+	buf := bytes.NewReader([]byte("hey!"))
 	err = b.PutReader("name2", buf, int64(buf.Len()), "text/plain", s3.Private)
 	c.Assert(err, IsNil)
 	defer b.Del("name2")
