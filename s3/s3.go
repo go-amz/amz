@@ -87,11 +87,11 @@ var createBucketConfiguration = `<CreateBucketConfiguration xmlns="http://s3.ama
   <LocationConstraint>%s</LocationConstraint>
 </CreateBucketConfiguration>`
 
-// locationConstraint returns an io.Reader specifying a LocationConstraint if
-// required for the region.
+// locationConstraint returns a *strings.Reader specifying a
+// LocationConstraint if required for the region.
 //
 // See http://goo.gl/bh9Kq for details.
-func (s3 *S3) locationConstraint() io.Reader {
+func (s3 *S3) locationConstraint() *strings.Reader {
 	constraint := ""
 	if s3.Region.S3LocationConstraint {
 		constraint = fmt.Sprintf(createBucketConfiguration, s3.Region.Name)
@@ -114,7 +114,7 @@ const (
 //
 // See http://goo.gl/FEBPD for details.
 func (b *Bucket) Put(path string, data []byte, contType string, perm ACL) error {
-	body := bytes.NewBuffer(data)
+	body := bytes.NewReader(data)
 	return b.PutReader(path, body, int64(len(data)), contType, perm)
 }
 
@@ -122,8 +122,8 @@ func (b *Bucket) Put(path string, data []byte, contType string, perm ACL) error 
 //
 // See http://goo.gl/ndjnR for details.
 func (b *Bucket) PutBucket(perm ACL) error {
-
-	req, err := http.NewRequest("PUT", b.ResolveS3BucketEndpoint(b.Name), b.locationConstraint())
+	body := b.locationConstraint()
+	req, err := http.NewRequest("PUT", b.ResolveS3BucketEndpoint(b.Name), body)
 	if err != nil {
 		return err
 	}
@@ -135,6 +135,11 @@ func (b *Bucket) PutBucket(perm ACL) error {
 	if err := b.S3.Sign(req, b.Auth); err != nil {
 		return err
 	}
+	// Signing may read the request body.
+	if _, err := body.Seek(0, 0); err != nil {
+		return err
+	}
+
 	_, err = http.DefaultClient.Do(req)
 	return err
 }
@@ -201,14 +206,18 @@ func (b *Bucket) GetReader(path string) (rc io.ReadCloser, err error) {
 
 // PutReader inserts an object into the S3 bucket by consuming data
 // from r until EOF.
-func (b *Bucket) PutReader(path string, r io.Reader, length int64, contType string, perm ACL) error {
+//
+// The signature of this method was modified to take in an
+// io.ReadSeeker to help address
+// https://github.com/go-amz/amz/issues/35.
+func (b *Bucket) PutReader(path string, r io.ReadSeeker, length int64, contType string, perm ACL) error {
 	return b.PutReaderWithHeader(path, r, length, contType, perm, http.Header{})
 }
 
 // PutReaderWithHeader inserts an object into the S3 bucket by
 // consuming data from r until EOF. It also adds the headers provided
 // to the request.
-func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, contType string, perm ACL, hdrs http.Header) error {
+func (b *Bucket) PutReaderWithHeader(path string, r io.ReadSeeker, length int64, contType string, perm ACL, hdrs http.Header) error {
 
 	req, err := http.NewRequest("PUT", b.Region.ResolveS3BucketEndpoint(b.Name), r)
 	if err != nil {
@@ -224,6 +233,10 @@ func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, con
 	addAmazonDateHeader(req.Header)
 
 	if err := b.S3.Sign(req, b.Auth); err != nil {
+		return err
+	}
+	// Signing may read the request body.
+	if _, err := r.Seek(0, 0); err != nil {
 		return err
 	}
 
@@ -511,7 +524,7 @@ func requestRetryLoop(req *http.Request, retryStrat aws.AttemptStrategy) (*http.
 			if shouldRetry(err) && attempt.HasNext() {
 				continue
 			}
-			return nil, err
+			return nil, fmt.Errorf("making request: %v", err)
 		}
 
 		if debug {

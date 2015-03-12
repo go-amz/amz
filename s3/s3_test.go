@@ -191,7 +191,7 @@ func (s *S) TestPutReader(c *C) {
 
 	b, err := s.s3.Bucket("bucket")
 	c.Assert(err, IsNil)
-	buf := bytes.NewBufferString("content")
+	buf := bytes.NewReader([]byte("content"))
 	err = b.PutReader("name", buf, int64(buf.Len()), "content-type", s3.Private)
 	c.Assert(err, IsNil)
 
@@ -210,7 +210,7 @@ func (s *S) TestPutReaderWithHeader(c *C) {
 
 	b, err := s.s3.Bucket("bucket")
 	c.Assert(err, IsNil)
-	buf := bytes.NewBufferString("content")
+	buf := bytes.NewReader([]byte("content"))
 	err = b.PutReaderWithHeader("name", buf, int64(buf.Len()), "content-type", s3.Private, http.Header{
 		"Cache-Control": []string{"max-age=5"},
 	})

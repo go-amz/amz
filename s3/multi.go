@@ -211,6 +211,11 @@ func (m *Multi) putPart(n int, r io.ReadSeeker, partSize int64, md5b64 string) (
 	if err := m.Bucket.S3.Sign(req, m.Bucket.Auth); err != nil {
 		return Part{}, err
 	}
+	// Signing may read the request body.
+	if _, err := r.Seek(0, 0); err != nil {
+		return Part{}, err
+	}
+
 	resp, err := requestRetryLoop(req, attempts)
 	defer resp.Body.Close()
 
@@ -421,11 +426,12 @@ func (m *Multi) Complete(parts []Part) error {
 	if err != nil {
 		return err
 	}
+	body := bytes.NewReader(data)
 
 	req, err := http.NewRequest(
 		"POST",
 		m.Bucket.Region.ResolveS3BucketEndpoint(m.Bucket.Name),
-		bytes.NewReader(data),
+		body,
 	)
 	if err != nil {
 		return err
@@ -443,6 +449,11 @@ func (m *Multi) Complete(parts []Part) error {
 	if err := m.Bucket.S3.Sign(req, m.Bucket.Auth); err != nil {
 		return err
 	}
+	// Signing may read the request body.
+	if _, err := body.Seek(0, 0); err != nil {
+		return err
+	}
+
 	resp, err := requestRetryLoop(req, attempts)
 	if err != nil {
 		return err
