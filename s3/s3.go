@@ -205,21 +205,30 @@ func (b *Bucket) GetReader(path string) (rc io.ReadCloser, err error) {
 }
 
 // PutReader inserts an object into the S3 bucket by consuming data
-// from r until EOF.
-//
-// The signature of this method was modified to take in an
-// io.ReadSeeker to help address
-// https://github.com/go-amz/amz/issues/35.
-func (b *Bucket) PutReader(path string, r io.ReadSeeker, length int64, contType string, perm ACL) error {
+// from r until EOF. Passing in an io.ReadSeeker for r will optimize
+// the memory usage.
+func (b *Bucket) PutReader(path string, r io.Reader, length int64, contType string, perm ACL) error {
 	return b.PutReaderWithHeader(path, r, length, contType, perm, http.Header{})
 }
 
 // PutReaderWithHeader inserts an object into the S3 bucket by
 // consuming data from r until EOF. It also adds the headers provided
-// to the request.
-func (b *Bucket) PutReaderWithHeader(path string, r io.ReadSeeker, length int64, contType string, perm ACL, hdrs http.Header) error {
+// to the request. Passing in an io.ReadSeeker for r will optimize the
+// memory usage.
+func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, contType string, perm ACL, hdrs http.Header) error {
 
-	req, err := http.NewRequest("PUT", b.Region.ResolveS3BucketEndpoint(b.Name), r)
+	// Convert the reader to a ReadSeeker so we can seek after
+	// signing.
+	seeker, ok := r.(io.ReadSeeker)
+	if !ok {
+		content, err := ioutil.ReadAll(r)
+		if err != nil {
+			return err
+		}
+		seeker = bytes.NewReader(content)
+	}
+
+	req, err := http.NewRequest("PUT", b.Region.ResolveS3BucketEndpoint(b.Name), seeker)
 	if err != nil {
 		return err
 	}
@@ -232,11 +241,18 @@ func (b *Bucket) PutReaderWithHeader(path string, r io.ReadSeeker, length int64,
 	req.Header.Add("x-amz-acl", string(perm))
 	addAmazonDateHeader(req.Header)
 
+	// Determine the current offset.
+	const seekFromPos = 1
+	prevPos, err := seeker.Seek(0, seekFromPos)
+	if err != nil {
+		return err
+	}
+
 	if err := b.S3.Sign(req, b.Auth); err != nil {
 		return err
 	}
 	// Signing may read the request body.
-	if _, err := r.Seek(0, 0); err != nil {
+	if _, err := seeker.Seek(prevPos, 0); err != nil {
 		return err
 	}
 
