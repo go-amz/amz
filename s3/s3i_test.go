@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -150,6 +151,38 @@ func killBucket(b *s3.Bucket) {
 		message += ": " + err.Error()
 	}
 	panic(message)
+}
+
+func (s *ClientTests) TestSignedUrl(c *C) {
+
+	b := testBucket(s.s3)
+	err := b.PutBucket(s3.PublicRead)
+	c.Assert(err, IsNil)
+
+	err = b.Put("name", []byte("test for signed URLs."), "text/plain", s3.Private)
+	c.Assert(err, IsNil)
+	defer b.Del("name")
+
+	req, err := http.NewRequest("GET", b.URL("name"), nil)
+	c.Assert(err, IsNil)
+	resp, err := http.DefaultClient.Do(req)
+	c.Assert(err, IsNil)
+	err = s3.BuildError(resp)
+	c.Check(err, NotNil)
+	c.Check(err.(*s3.Error).Code, Equals, "AccessDenied")
+
+	url, err := b.SignedURL("name", 24*time.Hour)
+	c.Assert(err, IsNil)
+
+	req, err = http.NewRequest("GET", url, nil)
+	c.Assert(err, IsNil)
+	resp, err = http.DefaultClient.Do(req)
+	c.Assert(err, IsNil)
+
+	body, err := ioutil.ReadAll(resp.Body)
+	c.Assert(err, IsNil)
+
+	c.Check(string(body), Equals, "test for signed URLs.")
 }
 
 func (s *ClientTests) TestBasicFunctionality(c *C) {
