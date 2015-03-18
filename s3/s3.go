@@ -390,6 +390,21 @@ func (b *Bucket) URL(path string) string {
 	return b.ResolveS3BucketEndpoint(b.Name) + path
 }
 
+// SignedURL returns a URL which can be used to fetch objects without
+// signing for the given duration.
+func (b *Bucket) SignedURL(path string, expires time.Duration) (string, error) {
+	req, err := http.NewRequest("GET", b.URL(path), nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Add("date", time.Now().Format(aws.ISO8601BasicFormat))
+
+	if err := aws.SignV4URL(req, b.Auth, b.Region.Name, "s3", expires); err != nil {
+		return "", err
+	}
+	return req.URL.String(), nil
+}
+
 type request struct {
 	method   string
 	bucket   string
