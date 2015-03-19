@@ -146,6 +146,10 @@ func (s *ServerTests) TestVolumes(c *C) {
 	}
 	resp1, err := s.ec2.CreateVolume(vol1)
 	c.Assert(err, IsNil)
+	defer func() {
+		_, err = s.ec2.DeleteVolume(resp1.Id)
+		c.Assert(err, IsNil)
+	}()
 	assertVolume(c, resp1.Volume, "", vol1.VolumeType, vol1.AvailZone, 20, vol1.IOPS)
 	id1 := resp1.Volume.Id
 
@@ -157,6 +161,10 @@ func (s *ServerTests) TestVolumes(c *C) {
 	}
 	resp2, err := s.ec2.CreateVolume(vol2)
 	c.Assert(err, IsNil)
+	defer func() {
+		_, err = s.ec2.DeleteVolume(resp2.Id)
+		c.Assert(err, IsNil)
+	}()
 	assertVolume(c, resp2.Volume, "", vol2.VolumeType, vol2.AvailZone, 101, vol2.IOPS)
 	id2 := resp2.Volume.Id
 
@@ -213,11 +221,6 @@ func (s *ServerTests) TestVolumes(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(list.Volumes, HasLen, 1)
 	assertVolume(c, list.Volumes[0], id2, vol2.VolumeType, vol2.AvailZone, 101, vol2.IOPS)
-
-	_, err = s.ec2.DeleteVolume(id1)
-	c.Assert(err, IsNil)
-	_, err = s.ec2.DeleteVolume(id2)
-	c.Assert(err, IsNil)
 }
 
 func assertVolume(c *C, obtained ec2.Volume, expectId, expectType, availZone string, expectSize int, expectIOPS int64) {
