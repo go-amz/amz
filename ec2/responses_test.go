@@ -765,7 +765,7 @@ var DescribeVpcsExample = `
 </DescribeVpcsResponse>
 `
 
-// http://goo.gl/wLPhf
+// http://goo.gl/wLPhfI
 var CreateSubnetExample = `
 <CreateSubnetResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
   <requestId>7a62c49f-347e-4fc4-9331-6e8eEXAMPLE</requestId>
@@ -1041,4 +1041,84 @@ var DescribeAccountAttributesExample3 = `
     </item>
   </accountAttributeSet>
 </DescribeAccountAttributesResponse>
+`
+
+// http://goo.gl/uXCf9F
+var CreateVolumeExample = `
+<CreateVolumeResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+  <volumeId>vol-1a2b3c4d</volumeId>
+  <size>80</size>
+  <iops>3000</iops>
+  <state>pending</state>
+  <snapshotId/>
+  <availabilityZone>us-east-1a</availabilityZone>
+  <status>creating</status>
+  <createTime>YYYY-MM-DDTHH:MM:SS.000Z</createTime>
+  <volumeType>standard</volumeType>
+  <encrypted>true</encrypted>
+</CreateVolumeResponse>
+`
+
+// http://goo.gl/AM46X0
+var DeleteVolumeExample = `
+<DeleteVolumeResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+  <return>true</return>
+</DeleteVolumeResponse>
+`
+
+// http://goo.gl/cZCJM4
+var DescribeVolumesExample = `
+<DescribeVolumesResponse xmlns="http://ec2.amazonaws.com/doc/2014-06-15/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+   <volumeSet>
+      <item>
+         <volumeId>vol-1a2b3c4d</volumeId>
+         <size>80</size>
+         <iops>3000</iops>
+         <state>pending</state>
+         <snapshotId/>
+         <availabilityZone>us-east-1a</availabilityZone>
+         <status>in-use</status>
+         <createTime>YYYY-MM-DDTHH:MM:SS.SSSZ</createTime>
+         <attachmentSet>
+            <item>
+               <volumeId>vol-1a2b3c4d</volumeId>
+               <instanceId>i-1a2b3c4d</instanceId>
+               <device>/dev/sdh</device>
+               <status>attached</status>
+               <attachTime>YYYY-MM-DDTHH:MM:SS.SSSZ</attachTime>
+               <deleteOnTermination>false</deleteOnTermination>
+            </item>
+         </attachmentSet>
+         <volumeType>standard</volumeType>
+         <encrypted>true</encrypted>
+      </item>
+   </volumeSet>
+</DescribeVolumesResponse>
+`
+
+// http://goo.gl/oESpiF
+var AttachVolumeExample = `
+<AttachVolumeResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+  <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+  <volumeId>vol-1a2b3c4d</volumeId>
+  <instanceId>i-1a2b3c4d</instanceId>
+  <device>/dev/sdh</device>
+  <status>attaching</status>
+  <attachTime>YYYY-MM-DDTHH:MM:SS.000Z</attachTime>
+</AttachVolumeResponse>
+`
+
+// http://goo.gl/22mwZP
+var DetachVolumeExample = `
+<DetachVolumeResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId>
+   <volumeId>vol-1a2b3c4d</volumeId>
+   <instanceId>i-1a2b3c4d</instanceId>
+   <device>/dev/sdh</device>
+   <status>detaching</status>
+   <attachTime>YYYY-MM-DDTHH:MM:SS.000Z</attachTime>
+</DetachVolumeResponse>
 `
