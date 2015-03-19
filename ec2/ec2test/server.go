@@ -2324,7 +2324,11 @@ func (srv *Server) describeVolumes(w http.ResponseWriter, req *http.Request, req
 		ok, err := f.ok(v)
 		_, known := idMap[v.Id]
 		if ok && (len(idMap) == 0 || known) {
-			resp.Volumes = append(resp.Volumes, v.Volume)
+			vol := v.Volume
+			if va, ok := srv.volumeAttachments[v.Id]; ok {
+				vol.Attachments = []ec2.VolumeAttachment{va.VolumeAttachment}
+			}
+			resp.Volumes = append(resp.Volumes, vol)
 		} else if err != nil {
 			fatalf(400, "InvalidParameterValue", "describe Volumes: %v", err)
 		}
@@ -2355,6 +2359,7 @@ func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	va := &volumeAttachment{ec2VolAttachment}
+	va.Status = "attaching"
 	srv.volumeAttachments[va.VolumeId] = va
 	var resp struct {
 		XMLName xml.Name

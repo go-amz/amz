@@ -287,6 +287,19 @@ func (s *ServerTests) TestVolumeAttachments(c *C) {
 	}
 	assertVolumeAttachment(c, resp2, volId, instId, "/dev/sdb")
 
+	// Querying volumes should contain the attachments.
+	resp, err := s.ec2.Volumes(nil, nil)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Volumes, HasLen, 1)
+	c.Assert(resp.Volumes[0].Attachments, HasLen, 1)
+	c.Assert(resp.Volumes[0].Attachments[0], Equals, ec2.VolumeAttachment{
+		VolumeId:            "vol-1",
+		Device:              "/dev/sdb",
+		InstanceId:          "i-13",
+		Status:              "attaching",
+		DeleteOnTermination: false,
+	})
+
 	_, err = s.ec2.DetachVolume(volId, "", "", false)
 	c.Assert(err, IsNil)
 }
