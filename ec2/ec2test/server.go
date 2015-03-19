@@ -2285,7 +2285,7 @@ func (srv *Server) deleteVolume(w http.ResponseWriter, req *http.Request, reqId 
 	defer srv.mu.Unlock()
 
 	if _, ok := srv.volumeAttachments[v.Id]; ok {
-		fatalf(400, "InvalidVolumeID.Attached", "Volume %s is attached", v.Id)
+		fatalf(400, "VolumeInUse", "Volume %s is attached", v.Id)
 	}
 	delete(srv.volumes, v.Id)
 	return &ec2.SimpleResp{
@@ -2353,7 +2353,7 @@ func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId 
 	ec2VolAttachment := srv.parseVolumeAttachment(req)
 
 	if _, ok := srv.volumeAttachments[ec2VolAttachment.VolumeId]; ok {
-		fatalf(400, "InvalidVolumeID.Attached", "Volume %s is already attached", ec2VolAttachment.VolumeId)
+		fatalf(400, "VolumeInUse", "Volume %s is already attached", ec2VolAttachment.VolumeId)
 	}
 
 	srv.mu.Lock()
@@ -2388,11 +2388,17 @@ func (srv *Server) parseVolumeAttachment(req *http.Request) ec2.VolumeAttachment
 			v := vals[0]
 			// Check volume id validity.
 			vol = srv.volume(v)
+			if vol.Status != "available" {
+				fatalf(400, " IncorrectState", "cannot attach volume that is not available", v)
+			}
 			attachment.VolumeId = v
 		case "InstanceId":
 			v := vals[0]
 			// Check instance id validity.
 			inst = srv.instance(v)
+			if inst.state != Running {
+				fatalf(400, "IncorrectInstanceState", "cannot attach volume to instance %s as it is not running", v)
+			}
 			attachment.InstanceId = v
 		case "Device":
 			attachment.Device = vals[0]
@@ -2403,7 +2409,7 @@ func (srv *Server) parseVolumeAttachment(req *http.Request) ec2.VolumeAttachment
 	if vol.AvailZone != inst.availZone {
 		fatalf(
 			400,
-			"InvalidParameterValue",
+			"InvalidVolume.ZoneMismatch",
 			"volume availability zone %q must match instance zone %q", vol.AvailZone, inst.availZone,
 		)
 	}
@@ -2418,16 +2424,17 @@ func (srv *Server) volumeAttachment(id string) *volumeAttachment {
 	defer srv.mu.Unlock()
 	v, found := srv.volumeAttachments[id]
 	if !found {
-		fatalf(400, "InvalidVolumeID.NotFound", "Volume attachment for volume %s not found", id)
+		fatalf(400, "InvalidAttachment.NotFound", "Volume attachment for volume %s not found", id)
 	}
 	return v
 }
 
 func (srv *Server) detachVolume(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
 	vId := req.Form.Get("VolumeId")
+	// Get attachment first so if not found, the expected error is returned.
+	va := srv.volumeAttachment(vId)
 	// Validate volume exists.
 	_ = srv.volume(vId)
-	va := srv.volumeAttachment(vId)
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()

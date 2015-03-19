@@ -9,13 +9,13 @@
 package ec2_test
 
 import (
+	"strconv"
 	"time"
 
 	. "gopkg.in/check.v1"
 
 	"gopkg.in/amz.v3/aws"
 	"gopkg.in/amz.v3/ec2"
-	"strconv"
 )
 
 // Volume tests with example responses
@@ -244,7 +244,7 @@ func assertVolume(c *C, obtained ec2.Volume, expectId, expectType, availZone str
 
 // Volume Attachment tests run against either a local test server or live on EC2.
 
-func (s *ServerTests) TestVolumeAttachments(c *C) {
+func (s *ServerTests) testVolumeAttachments(c *C) {
 	vol1 := ec2.CreateVolume{
 		AvailZone:  "us-east-1d",
 		VolumeType: "standard",
@@ -283,22 +283,16 @@ func (s *ServerTests) TestVolumeAttachments(c *C) {
 		}
 	}
 	if resp2 == nil {
-		c.Fatalf("timeout while waiting for the instance to be running")
+		c.Fatalf("timeout while waiting for the volume to be attached")
 	}
 	assertVolumeAttachment(c, resp2, volId, instId, "/dev/sdb")
 
 	// Querying volumes should contain the attachments.
-	resp, err := s.ec2.Volumes(nil, nil)
+	resp, err := s.ec2.Volumes([]string{volId}, nil)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Volumes, HasLen, 1)
 	c.Assert(resp.Volumes[0].Attachments, HasLen, 1)
-	c.Assert(resp.Volumes[0].Attachments[0], Equals, ec2.VolumeAttachment{
-		VolumeId:            "vol-1",
-		Device:              "/dev/sdb",
-		InstanceId:          "i-13",
-		Status:              "attaching",
-		DeleteOnTermination: false,
-	})
+	c.Assert(resp.Volumes[0].Attachments[0].InstanceId, Equals, instId)
 
 	_, err = s.ec2.DetachVolume(volId, "", "", false)
 	c.Assert(err, IsNil)

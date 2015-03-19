@@ -70,6 +70,11 @@ func (s *LocalServerSuite) TestSecurityGroups(c *C) {
 	s.clientTests.TestSecurityGroups(c)
 }
 
+func (s *LocalServerSuite) TestVolumeAttachments(c *C) {
+	s.srv.srv.SetInitialInstanceState(ec2test.Running)
+	s.ServerTests.testVolumeAttachments(c)
+}
+
 // TestUserData is not defined on ServerTests because it
 // requires the ec2test server to function.
 func (s *LocalServerSuite) TestUserData(c *C) {
@@ -891,6 +896,10 @@ func (s *AmazonServerSuite) TestRunInstancesVPC(c *C) {
 	c.Check(newNIC.Attachment.Status, Matches, `^(attaching|attached)$`)
 	c.Check(newNIC.Attachment.DeviceIndex, Equals, 0)
 	c.Check(newNIC.Attachment.DeleteOnTermination, Equals, true)
+}
+
+func (s *AmazonServerSuite) TestVolumeAttachments(c *C) {
+	s.ServerTests.testVolumeAttachments(c)
 }
 
 func idsOnly(gs []ec2.SecurityGroup) []ec2.SecurityGroup {
