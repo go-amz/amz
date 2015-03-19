@@ -25,7 +25,7 @@ func (s *S) TestCreateVolumeExample(c *C) {
 
 	volumeToCreate := ec2.CreateVolume{
 		AvailZone:  "us-east-1a",
-		VolumeType: "ssd",
+		VolumeType: "gp2",
 		VolumeSize: 10,
 		IOPS:       3000,
 		Encrypted:  true,
@@ -35,7 +35,7 @@ func (s *S) TestCreateVolumeExample(c *C) {
 
 	c.Assert(req.Form["Action"], DeepEquals, []string{"CreateVolume"})
 	c.Assert(req.Form["AvailabilityZone"], DeepEquals, []string{"us-east-1a"})
-	c.Assert(req.Form["VolumeType"], DeepEquals, []string{"ssd"})
+	c.Assert(req.Form["VolumeType"], DeepEquals, []string{"gp2"})
 	c.Assert(req.Form["Size"], DeepEquals, []string{"10"})
 	c.Assert(req.Form["Iops"], DeepEquals, []string{"3000"})
 	c.Assert(req.Form["Encrypted"], DeepEquals, []string{"true"})

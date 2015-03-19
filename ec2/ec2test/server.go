@@ -1222,6 +1222,14 @@ func (srv *Server) terminateInstances(w http.ResponseWriter, req *http.Request, 
 		}
 	}
 	for _, inst := range insts {
+		// Delete any attached volumes that are "DeleteOnTermination"
+		for _, va := range srv.volumeAttachments {
+			if va.InstanceId != inst.id() || !va.DeleteOnTermination {
+				continue
+			}
+			delete(srv.volumeAttachments, va.VolumeId)
+			delete(srv.volumes, va.VolumeId)
+		}
 		resp.StateChanges = append(resp.StateChanges, inst.terminate())
 	}
 	return &resp
@@ -2276,6 +2284,9 @@ func (srv *Server) deleteVolume(w http.ResponseWriter, req *http.Request, reqId 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
+	if _, ok := srv.volumeAttachments[v.Id]; ok {
+		fatalf(400, "InvalidVolumeID.Attached", "Volume %s is attached", v.Id)
+	}
 	delete(srv.volumes, v.Id)
 	return &ec2.SimpleResp{
 		XMLName:   xml.Name{defaultXMLName, "DeleteVolumeResponse"},
@@ -2336,6 +2347,11 @@ func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId 
 		fatalf(400, "MissingParameter", "missing device")
 	}
 	ec2VolAttachment := srv.parseVolumeAttachment(req)
+
+	if _, ok := srv.volumeAttachments[ec2VolAttachment.VolumeId]; ok {
+		fatalf(400, "InvalidVolumeID.Attached", "Volume %s is already attached", ec2VolAttachment.VolumeId)
+	}
+
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	va := &volumeAttachment{ec2VolAttachment}
@@ -2356,6 +2372,8 @@ func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId 
 
 func (srv *Server) parseVolumeAttachment(req *http.Request) ec2.VolumeAttachment {
 	attachment := ec2.VolumeAttachment{}
+	var vol *volume
+	var inst *Instance
 	for attr, vals := range req.Form {
 		switch attr {
 		case "AWSAccessKeyId", "Action", "Signature", "SignatureMethod", "SignatureVersion",
@@ -2364,18 +2382,25 @@ func (srv *Server) parseVolumeAttachment(req *http.Request) ec2.VolumeAttachment
 		case "VolumeId":
 			v := vals[0]
 			// Check volume id validity.
-			_ = srv.volume(v)
+			vol = srv.volume(v)
 			attachment.VolumeId = v
 		case "InstanceId":
 			v := vals[0]
 			// Check instance id validity.
-			_ = srv.instance(v)
+			inst = srv.instance(v)
 			attachment.InstanceId = v
 		case "Device":
 			attachment.Device = vals[0]
 		default:
 			fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
 		}
+	}
+	if vol.AvailZone != inst.availZone {
+		fatalf(
+			400,
+			"InvalidParameterValue",
+			"volume availability zone %q must match instance zone %q", vol.AvailZone, inst.availZone,
+		)
 	}
 	return attachment
 }
@@ -2406,7 +2431,7 @@ func (srv *Server) detachVolume(w http.ResponseWriter, req *http.Request, reqId 
 		XMLName xml.Name
 		ec2.VolumeAttachmentResp
 	}
-	resp.XMLName = xml.Name{defaultXMLName, "AttachVolumeResponse"}
+	resp.XMLName = xml.Name{defaultXMLName, "DetachVolumeResponse"}
 	resp.RequestId = reqId
 	resp.VolumeId = va.VolumeId
 	resp.InstanceId = va.InstanceId
