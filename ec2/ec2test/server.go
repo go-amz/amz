@@ -56,10 +56,12 @@ type Server struct {
 	reservations         map[string]*reservation   // id -> reservation
 	groups               map[string]*securityGroup // id -> group
 	zones                []availabilityZone
-	vpcs                 map[string]*vpc        // id -> vpc
-	subnets              map[string]*subnet     // id -> subnet
-	ifaces               map[string]*iface      // id -> iface
-	attachments          map[string]*attachment // id -> attachment
+	vpcs                 map[string]*vpc              // id -> vpc
+	subnets              map[string]*subnet           // id -> subnet
+	ifaces               map[string]*iface            // id -> iface
+	networkAttachments   map[string]*attachment       // id -> attachment
+	volumes              map[string]*volume           // id -> volume
+	volumeAttachments    map[string]*volumeAttachment // id -> volumeAttachment
 	maxId                counter
 	reqId                counter
 	reservationId        counter
@@ -67,9 +69,9 @@ type Server struct {
 	vpcId                counter
 	dhcpOptsId           counter
 	subnetId             counter
+	volumeId             counter
 	ifaceId              counter
 	attachId             counter
-	volumeId             counter
 	initialInstanceState ec2.InstanceState
 }
 
@@ -470,6 +472,11 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"DescribeAccountAttributes":     (*Server).accountAttributes,
 	"AssignPrivateIpAddresses":      (*Server).assignPrivateIP,
 	"UnassignPrivateIpAddresses":    (*Server).unassignPrivateIP,
+	"CreateVolume":                  (*Server).createVolume,
+	"DeleteVolume":                  (*Server).deleteVolume,
+	"DescribeVolumes":               (*Server).describeVolumes,
+	"AttachVolume":                  (*Server).attachVolume,
+	"DetachVolume":                  (*Server).detachVolume,
 }
 
 const (
@@ -498,7 +505,9 @@ func NewServer() (*Server, error) {
 		vpcs:                 make(map[string]*vpc),
 		subnets:              make(map[string]*subnet),
 		ifaces:               make(map[string]*iface),
-		attachments:          make(map[string]*attachment),
+		networkAttachments:   make(map[string]*attachment),
+		volumes:              make(map[string]*volume),
+		volumeAttachments:    make(map[string]*volumeAttachment),
 		reservations:         make(map[string]*reservation),
 		initialInstanceState: Pending,
 	}
@@ -925,7 +934,7 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 			AttachTime:          time.Now().Format(time.RFC3339),
 			DeleteOnTermination: true,
 		}
-		srv.attachments[attach.Id] = &attachment{attach}
+		srv.networkAttachments[attach.Id] = &attachment{attach}
 		nic := ec2.NetworkInterface{
 			Id:               nicId,
 			SubnetId:         instSubnet.Id,
@@ -1213,6 +1222,14 @@ func (srv *Server) terminateInstances(w http.ResponseWriter, req *http.Request, 
 		}
 	}
 	for _, inst := range insts {
+		// Delete any attached volumes that are "DeleteOnTermination"
+		for _, va := range srv.volumeAttachments {
+			if va.InstanceId != inst.id() || !va.DeleteOnTermination {
+				continue
+			}
+			delete(srv.volumeAttachments, va.VolumeId)
+			delete(srv.volumes, va.VolumeId)
+		}
 		resp.StateChanges = append(resp.StateChanges, inst.terminate())
 	}
 	return &resp
@@ -2065,7 +2082,7 @@ func (srv *Server) attachIFace(w http.ResponseWriter, req *http.Request, reqId s
 		AttachTime:          time.Now().Format(time.RFC3339),
 		DeleteOnTermination: false, // false for manually created NICs
 	}}
-	srv.attachments[a.Id] = a
+	srv.networkAttachments[a.Id] = a
 	i.Attachment = a.NetworkInterfaceAttachment
 	i.Status = "in-use"
 	srv.ifaces[i.Id] = i
@@ -2092,7 +2109,7 @@ func (srv *Server) detachIFace(w http.ResponseWriter, req *http.Request, reqId s
 			break
 		}
 	}
-	delete(srv.attachments, att.Id)
+	delete(srv.networkAttachments, att.Id)
 	return &ec2.SimpleResp{
 		XMLName:   xml.Name{defaultXMLName, "DetachNetworkInterfaceResponse"},
 		RequestId: reqId,
@@ -2161,6 +2178,266 @@ func (srv *Server) unassignPrivateIP(w http.ResponseWriter, req *http.Request, r
 		RequestId: reqId,
 		Return:    true,
 	}
+}
+
+type volume struct {
+	ec2.Volume
+}
+
+func (v *volume) matchAttr(attr, value string) (ok bool, err error) {
+	if strings.HasPrefix(attr, "attachment.") {
+		return false, fmt.Errorf("%q filter is not implemented", attr)
+	}
+	switch attr {
+	case "volume-type":
+		return v.VolumeType == value, nil
+	case "status":
+		return v.Status == value, nil
+	case "volume-id":
+		return v.Id == value, nil
+	case "size":
+		size, err := strconv.Atoi(value)
+		if err != nil {
+			return false, err
+		}
+		return v.Size == size, nil
+	case "availability-zone":
+		return v.AvailZone == value, nil
+	case "snapshot-id":
+		return v.SnapshotId == value, nil
+	case "encrypted":
+		encrypted, err := strconv.ParseBool(value)
+		if err != nil {
+			return false, err
+		}
+		return v.Encrypted == encrypted, nil
+	case "tag", "tag-key", "tag-value", "create-time":
+		return false, fmt.Errorf("%q filter is not implemented", attr)
+	}
+	return false, fmt.Errorf("unknown attribute %q", attr)
+}
+
+func (srv *Server) createVolume(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	if req.Form.Get("AvailabilityZone") == "" {
+		fatalf(400, "MissingParameter", "missing availability zone")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	ec2Vol := srv.parseVolume(req)
+	v := &volume{ec2Vol}
+	srv.volumes[v.Id] = v
+	var resp struct {
+		XMLName xml.Name
+		ec2.CreateVolumeResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "CreateVolumeResponse"}
+	resp.RequestId = reqId
+	resp.Volume = v.Volume
+	return resp
+}
+
+func (srv *Server) parseVolume(req *http.Request) ec2.Volume {
+	volume := ec2.Volume{}
+	for attr, vals := range req.Form {
+		switch attr {
+		case "AWSAccessKeyId", "Action", "Signature", "SignatureMethod", "SignatureVersion",
+			"Version", "Timestamp":
+			continue
+		case "AvailabilityZone":
+			v := vals[0]
+			if v == "" {
+				fatalf(400, "MissingParameter", "missing availability zone")
+			}
+			volume.AvailZone = v
+		case "SnapshotId":
+			volume.SnapshotId = vals[0]
+		case "VolumeType":
+			volume.VolumeType = vals[0]
+		case "Size":
+			volume.Size = atoi(vals[0])
+		case "Iops":
+			volume.IOPS = int64(atoi(vals[0]))
+		case "Encrypted":
+			val, err := strconv.ParseBool(vals[0])
+			if err != nil {
+				fatalf(400, "InvalidParameterValue", "bad flag %s: %s", attr, vals[0])
+			}
+			volume.Encrypted = val
+		default:
+			fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+		}
+	}
+	volume.Id = fmt.Sprintf("vol-%d", srv.volumeId.next())
+	volume.Status = "available"
+	volume.CreateTime = time.Now().Format(time.RFC3339)
+	if volume.VolumeType == "" {
+		volume.VolumeType = "magnetic"
+	}
+	if volume.Size == 0 {
+		volume.Size = 1
+	}
+	return volume
+}
+
+func (srv *Server) deleteVolume(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	v := srv.volume(req.Form.Get("VolumeId"))
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	if _, ok := srv.volumeAttachments[v.Id]; ok {
+		fatalf(400, "InvalidVolumeID.Attached", "Volume %s is attached", v.Id)
+	}
+	delete(srv.volumes, v.Id)
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{defaultXMLName, "DeleteVolumeResponse"},
+		RequestId: reqId,
+		Return:    true,
+	}
+}
+
+func (srv *Server) volume(id string) *volume {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing volumeId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	v, found := srv.volumes[id]
+	if !found {
+		fatalf(400, "InvalidVolumeID.NotFound", "Volume %s not found", id)
+	}
+	return v
+}
+
+func (srv *Server) describeVolumes(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	idMap := parseIDs(req.Form, "VolumeId.")
+	f := newFilter(req.Form)
+	var resp struct {
+		XMLName xml.Name
+		ec2.VolumesResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DescribeVolumesResponse"}
+	resp.RequestId = reqId
+	for _, v := range srv.volumes {
+		ok, err := f.ok(v)
+		_, known := idMap[v.Id]
+		if ok && (len(idMap) == 0 || known) {
+			resp.Volumes = append(resp.Volumes, v.Volume)
+		} else if err != nil {
+			fatalf(400, "InvalidParameterValue", "describe Volumes: %v", err)
+		}
+	}
+	return &resp
+}
+
+type volumeAttachment struct {
+	ec2.VolumeAttachment
+}
+
+func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	if req.Form.Get("VolumeId") == "" {
+		fatalf(400, "MissingParameter", "missing volume id")
+	}
+	if req.Form.Get("InstanceId") == "" {
+		fatalf(400, "MissingParameter", "missing instance id")
+	}
+	if req.Form.Get("Device") == "" {
+		fatalf(400, "MissingParameter", "missing device")
+	}
+	ec2VolAttachment := srv.parseVolumeAttachment(req)
+
+	if _, ok := srv.volumeAttachments[ec2VolAttachment.VolumeId]; ok {
+		fatalf(400, "InvalidVolumeID.Attached", "Volume %s is already attached", ec2VolAttachment.VolumeId)
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	va := &volumeAttachment{ec2VolAttachment}
+	srv.volumeAttachments[va.VolumeId] = va
+	var resp struct {
+		XMLName xml.Name
+		ec2.VolumeAttachmentResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "AttachVolumeResponse"}
+	resp.RequestId = reqId
+	resp.VolumeId = va.VolumeId
+	resp.InstanceId = va.InstanceId
+	resp.Device = va.Device
+	resp.Status = "attaching"
+	resp.AttachTime = time.Now().Format(time.RFC3339)
+	return resp
+}
+
+func (srv *Server) parseVolumeAttachment(req *http.Request) ec2.VolumeAttachment {
+	attachment := ec2.VolumeAttachment{}
+	var vol *volume
+	var inst *Instance
+	for attr, vals := range req.Form {
+		switch attr {
+		case "AWSAccessKeyId", "Action", "Signature", "SignatureMethod", "SignatureVersion",
+			"Version", "Timestamp":
+			continue
+		case "VolumeId":
+			v := vals[0]
+			// Check volume id validity.
+			vol = srv.volume(v)
+			attachment.VolumeId = v
+		case "InstanceId":
+			v := vals[0]
+			// Check instance id validity.
+			inst = srv.instance(v)
+			attachment.InstanceId = v
+		case "Device":
+			attachment.Device = vals[0]
+		default:
+			fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+		}
+	}
+	if vol.AvailZone != inst.availZone {
+		fatalf(
+			400,
+			"InvalidParameterValue",
+			"volume availability zone %q must match instance zone %q", vol.AvailZone, inst.availZone,
+		)
+	}
+	return attachment
+}
+
+func (srv *Server) volumeAttachment(id string) *volumeAttachment {
+	if id == "" {
+		fatalf(400, "MissingParameter", "missing volumeId")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	v, found := srv.volumeAttachments[id]
+	if !found {
+		fatalf(400, "InvalidVolumeID.NotFound", "Volume attachment for volume %s not found", id)
+	}
+	return v
+}
+
+func (srv *Server) detachVolume(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	vId := req.Form.Get("VolumeId")
+	// Validate volume exists.
+	_ = srv.volume(vId)
+	va := srv.volumeAttachment(vId)
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	delete(srv.volumeAttachments, vId)
+	var resp struct {
+		XMLName xml.Name
+		ec2.VolumeAttachmentResp
+	}
+	resp.XMLName = xml.Name{defaultXMLName, "DetachVolumeResponse"}
+	resp.RequestId = reqId
+	resp.VolumeId = va.VolumeId
+	resp.InstanceId = va.InstanceId
+	resp.Device = va.Device
+	resp.Status = "detaching"
+	return resp
 }
 
 func (r *reservation) hasRunningMachine() bool {
@@ -2240,7 +2517,7 @@ func (srv *Server) attachment(id string) *attachment {
 	}
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
-	att, found := srv.attachments[id]
+	att, found := srv.networkAttachments[id]
 	if !found {
 		fatalf(
 			400,
