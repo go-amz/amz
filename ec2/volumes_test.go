@@ -304,3 +304,12 @@ func assertVolumeAttachment(c *C, obtained *ec2.VolumeAttachmentResp, volId, ins
 	c.Check(obtained.Device, Equals, device)
 	c.Check(obtained.Status, Matches, "(attaching|attached)")
 }
+
+func deleteVolume(c *C, e *ec2.EC2, id string) {
+	_, err := e.DeleteVolume(id)
+	if err != nil && c.Check(err, ErrorMatches, ".*InvalidVolume.NotFound.*") {
+		// Nothing to do.
+		return
+	}
+	c.Assert(err, IsNil, Commentf("%v LEFT RUNNING!!!", id))
+}
