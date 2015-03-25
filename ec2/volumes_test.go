@@ -311,5 +311,5 @@ func deleteVolume(c *C, e *ec2.EC2, id string) {
 		// Nothing to do.
 		return
 	}
-	c.Assert(err, IsNil, Commentf("%v LEFT RUNNING!!!", id))
+	c.Assert(err, IsNil, Commentf("%v HAS NOT BEEN DESTROYED!", id))
 }
