@@ -75,6 +75,16 @@ func (s *LocalServerSuite) TestVolumeAttachments(c *C) {
 	s.ServerTests.testVolumeAttachments(c)
 }
 
+func (s *LocalServerSuite) TestModifyInstanceAttributeBlockDeviceMappings(c *C) {
+	s.srv.srv.SetInitialInstanceState(ec2test.Running)
+	s.ServerTests.testModifyInstanceAttributeBlockDeviceMappings(c)
+}
+
+func (s *LocalServerSuite) TestModifyInstanceAttributeSourceDestCheck(c *C) {
+	s.srv.srv.SetInitialInstanceState(ec2test.Running)
+	s.ServerTests.testModifyInstanceAttributeSourceDestCheck(c)
+}
+
 // TestUserData is not defined on ServerTests because it
 // requires the ec2test server to function.
 func (s *LocalServerSuite) TestUserData(c *C) {
@@ -902,6 +912,14 @@ func (s *AmazonServerSuite) TestVolumeAttachments(c *C) {
 	s.ServerTests.testVolumeAttachments(c)
 }
 
+func (s *AmazonServerSuite) TestModifyInstanceAttributeBlockDeviceMappings(c *C) {
+	s.ServerTests.testModifyInstanceAttributeBlockDeviceMappings(c)
+}
+
+func (s *AmazonServerSuite) TestModifyInstanceAttributeSourceDestCheck(c *C) {
+	s.ServerTests.testModifyInstanceAttributeSourceDestCheck(c)
+}
+
 func idsOnly(gs []ec2.SecurityGroup) []ec2.SecurityGroup {
 	for i := range gs {
 		gs[i].Name = ""
@@ -1114,6 +1132,196 @@ func (s *ServerTests) deleteGroups(c *C, groups []ec2.SecurityGroup) {
 		}
 	}
 	c.Fatalf("timeout while waiting %v groups to get deleted!", groups)
+}
+
+// testModifyInstanceAttributeBlockDeviceMappings is called by
+// TestModifyInstanceAttributeBlockDeviceMappings in LocalServerSuite
+// and AmazonServerSuite.
+func (s *ServerTests) testModifyInstanceAttributeBlockDeviceMappings(c *C) {
+	runInstancesResp, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+	})
+	c.Assert(err, IsNil)
+	c.Assert(runInstancesResp, NotNil)
+	instanceId := runInstancesResp.Instances[0].InstanceId
+	defer terminateInstances(c, s.ec2, []string{instanceId})
+
+	createVolumeResp, err := s.ec2.CreateVolume(ec2.CreateVolume{
+		AvailZone:  runInstancesResp.Instances[0].AvailZone,
+		VolumeType: "standard",
+		VolumeSize: 10,
+	})
+	c.Assert(err, IsNil)
+	volumeId := createVolumeResp.Volume.Id
+	defer deleteVolume(c, s.ec2, volumeId)
+	// Terminate instance before volume, to ensure volume is detached.
+	// We still need the previous terminateInstances in case CreateVolume
+	// fails.
+	defer terminateInstances(c, s.ec2, []string{instanceId})
+
+	describeInstance := func() *ec2.Instance {
+		resp, err := s.ec2.Instances([]string{instanceId}, nil)
+		c.Assert(err, IsNil)
+		c.Assert(resp.Reservations, HasLen, 1)
+		c.Assert(resp.Reservations[0].Instances, HasLen, 1)
+		return &resp.Reservations[0].Instances[0]
+	}
+
+	// Wait for the instance to be running, so we can attach the volumes.
+	testAttempt := aws.AttemptStrategy{
+		Total: 5 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	var inst *ec2.Instance
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for instance to be running")
+		inst = describeInstance()
+		if inst.State == ec2test.Running {
+			break
+		}
+	}
+	if inst == nil || inst.State != ec2test.Running {
+		c.Fatalf("timeout while waiting for %v to be running", instanceId)
+	}
+
+	_, err = s.ec2.AttachVolume(volumeId, instanceId, "/dev/sdf1")
+	c.Assert(err, IsNil)
+
+	describeVolume := func() *ec2.Volume {
+		resp, err := s.ec2.Volumes([]string{volumeId}, nil)
+		c.Assert(err, IsNil)
+		c.Assert(resp.Volumes, HasLen, 1)
+		return &resp.Volumes[0]
+	}
+
+	// Wait for volume to be attached, so we can modify attributes.
+	var attached bool
+	for a := testAttempt.Start(); !attached && a.Next(); {
+		c.Logf("waiting for volume to be attached")
+		volume := describeVolume()
+		if len(volume.Attachments) == 0 {
+			continue
+		}
+		if volume.Attachments[0].Status == "attached" {
+			attached = true
+		}
+	}
+	if !attached {
+		c.Fatalf("timeout while waiting for %v to be attached", volumeId)
+	}
+
+	volume := describeVolume()
+	c.Assert(volume.Attachments, HasLen, 1)
+	c.Assert(volume.Attachments[0].Device, Equals, "/dev/sdf1")
+	c.Assert(volume.Attachments[0].DeleteOnTermination, Equals, false)
+
+	_, err = s.ec2.ModifyInstanceAttribute(&ec2.ModifyInstanceAttribute{
+		InstanceId: instanceId,
+		BlockDeviceMappings: []ec2.InstanceBlockDeviceMapping{{
+			DeviceName:          "/dev/sdf1",
+			DeleteOnTermination: true,
+		}},
+	}, nil)
+	c.Assert(err, IsNil)
+
+	// Finally, wait for "delete on termination" to propagate, so we can
+	// confirm that the ModifyInstanceAttribute does something.
+	var deleteOnTermination bool
+	for a := testAttempt.Start(); !deleteOnTermination && a.Next(); {
+		c.Logf("waiting for DeleteOnTermination attribute to propagate")
+		volume := describeVolume()
+		c.Assert(volume.Attachments, HasLen, 1)
+		deleteOnTermination = volume.Attachments[0].DeleteOnTermination
+	}
+	if !deleteOnTermination {
+		c.Fatalf("timeout while waiting for delete-on-termination to be set")
+	}
+}
+
+// testModifyInstanceAttributeSourceDestCheck is called by
+// TestModifyInstanceAttributeSourceDestCheck in LocalServerSuite
+// and AmazonServerSuite.
+func (s *ServerTests) testModifyInstanceAttributeSourceDestCheck(c *C) {
+	vpcResp, err := s.ec2.CreateVPC("10.6.0.0/16", "")
+	c.Assert(err, IsNil)
+	vpcId := vpcResp.VPC.Id
+	defer s.deleteVPCs(c, []string{vpcId})
+
+	subResp := s.createSubnet(c, vpcId, "10.6.1.0/24", "")
+	subId := subResp.Subnet.Id
+	defer s.deleteSubnets(c, []string{subId})
+
+	groupResp, err := s.ec2.CreateSecurityGroup(
+		vpcId,
+		sessionName("testgroup1 vpc"),
+		"testgroup description vpc",
+	)
+	c.Assert(err, IsNil)
+	group := groupResp.SecurityGroup
+	defer s.deleteGroups(c, []ec2.SecurityGroup{group})
+
+	// Create a VPC instance; SourceDestCheck cannot be altered
+	// for non-VPC instances.
+	ips := []ec2.PrivateIP{
+		{Address: "10.6.1.10", IsPrimary: true},
+		{Address: "10.6.1.20", IsPrimary: false},
+	}
+	instResp, err := s.ec2.RunInstances(&ec2.RunInstances{
+		MinCount:     1,
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		NetworkInterfaces: []ec2.RunNetworkInterface{{
+			DeviceIndex:         0,
+			SubnetId:            subId,
+			PrivateIPs:          ips,
+			SecurityGroupIds:    []string{group.Id},
+			DeleteOnTermination: true,
+		}},
+	})
+	c.Assert(err, IsNil)
+
+	inst := &instResp.Instances[0]
+	instanceId := inst.InstanceId
+	defer terminateInstances(c, s.ec2, []string{instanceId})
+
+	describeInstance := func() *ec2.Instance {
+		resp, err := s.ec2.Instances([]string{instanceId}, nil)
+		c.Assert(err, IsNil)
+		c.Assert(resp.Reservations, HasLen, 1)
+		c.Assert(resp.Reservations[0].Instances, HasLen, 1)
+		return &resp.Reservations[0].Instances[0]
+	}
+
+	// Wait for the instance to be running, so we can check the default
+	// attribute value for SourceDestCheck.
+	testAttempt := aws.AttemptStrategy{
+		Total: 5 * time.Minute,
+		Delay: 5 * time.Second,
+	}
+	for a := testAttempt.Start(); a.Next(); {
+		c.Logf("waiting for instance to be running")
+		inst = describeInstance()
+		if inst.State == ec2test.Running {
+			break
+		}
+	}
+	if inst == nil || inst.State != ec2test.Running {
+		c.Fatalf("timeout while waiting for %v to be running", instanceId)
+	}
+
+	// SourceDestCheck is true by default.
+	c.Assert(inst.SourceDestCheck, Equals, true)
+
+	sourceDestCheck := false
+	_, err = s.ec2.ModifyInstanceAttribute(&ec2.ModifyInstanceAttribute{
+		InstanceId:      instanceId,
+		SourceDestCheck: &sourceDestCheck,
+	}, nil)
+	c.Assert(err, IsNil)
+
+	inst = describeInstance()
+	c.Assert(inst.SourceDestCheck, Equals, false)
 }
 
 // errorCode returns the code of the given error, assuming it's not

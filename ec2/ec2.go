@@ -560,6 +560,47 @@ func (ec2 *EC2) Instances(instIds []string, filter *Filter) (resp *InstancesResp
 	return
 }
 
+// The ModifyInstanceAttribute type encapsulates options for the respective
+// request in EC2.
+//
+// See http://goo.gl/cTxLa7 for more details.
+type ModifyInstanceAttribute struct {
+	InstanceId          string
+	SourceDestCheck     *bool
+	BlockDeviceMappings []InstanceBlockDeviceMapping
+}
+
+// ModifyInstanceAttribute modifies a single attribute of an instance in EC2.
+//
+// See http://goo.gl/cTxLa7 for more details.
+func (ec2 *EC2) ModifyInstanceAttribute(req *ModifyInstanceAttribute, filter *Filter) (resp *SimpleResp, err error) {
+	params := makeParams("ModifyInstanceAttribute")
+	params["InstanceId"] = req.InstanceId
+	if req.SourceDestCheck != nil {
+		params["SourceDestCheck.Value"] = fmt.Sprint(*req.SourceDestCheck)
+	}
+	if req.BlockDeviceMappings != nil {
+		for i, b := range req.BlockDeviceMappings {
+			n := strconv.Itoa(i + 1)
+			prefix := "BlockDeviceMapping." + n
+			if b.DeviceName != "" {
+				params[prefix+".DeviceName"] = b.DeviceName
+			}
+			if b.VolumeId != "" {
+				params[prefix+".Ebs.VolumeId"] = b.VolumeId
+			}
+			params[prefix+".Ebs.DeleteOnTermination"] = fmt.Sprint(b.DeleteOnTermination)
+		}
+	}
+	filter.addParams(params)
+	resp = &SimpleResp{}
+	err = ec2.query(params, resp)
+	if err != nil {
+		return nil, err
+	}
+	return
+}
+
 // ----------------------------------------------------------------------------
 // Image and snapshot management functions and types.
 

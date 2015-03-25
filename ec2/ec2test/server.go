@@ -100,6 +100,7 @@ type Instance struct {
 	vpcId               string
 	ifaces              []ec2.NetworkInterface
 	blockDeviceMappings []ec2.InstanceBlockDeviceMapping
+	sourceDestCheck     bool
 }
 
 // permKey represents permission for a given security
@@ -477,6 +478,7 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"DescribeVolumes":               (*Server).describeVolumes,
 	"AttachVolume":                  (*Server).attachVolume,
 	"DetachVolume":                  (*Server).detachVolume,
+	"ModifyInstanceAttribute":       (*Server).modifyInstanceAttribute,
 }
 
 const (
@@ -1061,6 +1063,9 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 	instType := req.Form.Get("InstanceType")
 	imageId := req.Form.Get("ImageId")
 	availZone := req.Form.Get("Placement.AvailabilityZone")
+	if availZone == "" {
+		availZone = defaultAvailZone
+	}
 
 	r := srv.newReservation(srv.formToGroups(req.Form))
 
@@ -1176,13 +1181,14 @@ func (srv *Server) NewInstances(n int, instType string, imageId string, state ec
 
 func (srv *Server) newInstance(r *reservation, instType string, imageId string, availZone string, state ec2.InstanceState) *Instance {
 	inst := &Instance{
-		seq:         srv.maxId.next(),
-		first:       true,
-		instType:    instType,
-		imageId:     imageId,
-		availZone:   availZone,
-		state:       state,
-		reservation: r,
+		seq:             srv.maxId.next(),
+		first:           true,
+		instType:        instType,
+		imageId:         imageId,
+		availZone:       availZone,
+		state:           state,
+		reservation:     r,
+		sourceDestCheck: true,
 	}
 	id := inst.id()
 	srv.instances[id] = inst
@@ -1274,6 +1280,7 @@ func (inst *Instance) ec2instance() ec2.Instance {
 		SubnetId:            inst.subnetId,
 		NetworkInterfaces:   inst.ifaces,
 		BlockDeviceMappings: blockDeviceMappings,
+		SourceDestCheck:     inst.sourceDestCheck,
 		// TODO the rest
 	}
 }
@@ -2303,7 +2310,7 @@ func (srv *Server) volume(id string) *volume {
 	defer srv.mu.Unlock()
 	v, found := srv.volumes[id]
 	if !found {
-		fatalf(400, "InvalidVolumeID.NotFound", "Volume %s not found", id)
+		fatalf(400, "InvalidVolume.NotFound", "Volume %s not found", id)
 	}
 	return v
 }
@@ -2359,7 +2366,7 @@ func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	va := &volumeAttachment{ec2VolAttachment}
-	va.Status = "attaching"
+	va.Status = "attached"
 	srv.volumeAttachments[va.VolumeId] = va
 	var resp struct {
 		XMLName xml.Name
@@ -2370,7 +2377,7 @@ func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId 
 	resp.VolumeId = va.VolumeId
 	resp.InstanceId = va.InstanceId
 	resp.Device = va.Device
-	resp.Status = "attaching"
+	resp.Status = va.Status
 	resp.AttachTime = time.Now().Format(time.RFC3339)
 	return resp
 }
@@ -2450,6 +2457,83 @@ func (srv *Server) detachVolume(w http.ResponseWriter, req *http.Request, reqId 
 	resp.Device = va.Device
 	resp.Status = "detaching"
 	return resp
+}
+
+func (srv *Server) modifyInstanceAttribute(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	var inst *Instance
+	var blockDeviceMappings []ec2.InstanceBlockDeviceMapping
+	var sourceDestCheck *bool
+
+	for attr, vals := range req.Form {
+		if strings.HasPrefix(attr, "BlockDeviceMapping.") {
+			fields := strings.SplitN(attr, ".", 3)
+			if len(fields) != 3 {
+				fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+			}
+			i := atoi(fields[1])
+			for i >= len(blockDeviceMappings) {
+				blockDeviceMappings = append(
+					blockDeviceMappings, ec2.InstanceBlockDeviceMapping{},
+				)
+			}
+			switch fields[2] {
+			case "DeviceName":
+				blockDeviceMappings[i].DeviceName = vals[0]
+			case "Ebs.DeleteOnTermination":
+				val, err := strconv.ParseBool(vals[0])
+				if err != nil {
+					fatalf(400, "InvalidParameterValue", "bad flag %s: %s", attr, vals[0])
+				}
+				blockDeviceMappings[i].DeleteOnTermination = val
+			case "Ebs.VolumeId":
+				blockDeviceMappings[i].VolumeId = vals[0]
+			default:
+				fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+			}
+			continue
+		}
+		switch attr {
+		case "AWSAccessKeyId", "Action", "Signature", "SignatureMethod", "SignatureVersion",
+			"Version", "Timestamp":
+			continue
+		case "InstanceId":
+			inst = srv.instance(vals[0])
+		case "SourceDestCheck.Value":
+			val, err := strconv.ParseBool(vals[0])
+			if err != nil {
+				fatalf(400, "InvalidParameterValue", "bad flag %s: %s", attr, vals[0])
+			}
+			sourceDestCheck = &val
+		default:
+			fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+		}
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	switch {
+	case sourceDestCheck != nil:
+		if inst.vpcId == "" {
+			fatalf(400, "InvalidParameterCombination", "You may only modify the sourceDestCheck attribute for VPC instances")
+		}
+		inst.sourceDestCheck = *sourceDestCheck
+	case blockDeviceMappings != nil:
+		for _, m := range blockDeviceMappings {
+			for _, a := range srv.volumeAttachments {
+				if a.InstanceId != inst.id() || a.Device != m.DeviceName {
+					continue
+				}
+				a.DeleteOnTermination = m.DeleteOnTermination
+			}
+		}
+	}
+
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{defaultXMLName, "ModifyInstanceAttributeResponse"},
+		RequestId: reqId,
+		Return:    true,
+	}
 }
 
 func (r *reservation) hasRunningMachine() bool {
