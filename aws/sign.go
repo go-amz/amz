@@ -202,10 +202,16 @@ func canonicalRequest(
 		return
 	}
 
+	// AWS requires that if the path is empty, we pass in a "/".
+	path := req.URL.Path
+	if path == "" {
+		path = "/"
+	}
+
 	c := new(bytes.Buffer)
 	if err := errorCollector(
 		fprintfWrapper(c, "%s\n", requestMethodVerb(req.Method)),
-		fprintfWrapper(c, "%s\n", req.URL.Path),
+		fprintfWrapper(c, "%s\n", path),
 		fprintfWrapper(c, "%s\n", queryStr),
 		fprintfWrapper(c, "%s\n", canHdr),
 		fprintfWrapper(c, "%s\n", strings.Join(sortedHdrNames, ";")),
@@ -266,8 +272,8 @@ func authHeaderString(
 	w := new(bytes.Buffer)
 	if err := errorCollector(
 		fprintfWrapper(w, "AWS4-HMAC-SHA256 "),
-		fprintfWrapper(w, "Credential=%s/%s,", accessKey, credScope),
-		fprintfWrapper(w, "SignedHeaders=%s,", strings.Join(sortedHeaderNames, ";")),
+		fprintfWrapper(w, "Credential=%s/%s, ", accessKey, credScope),
+		fprintfWrapper(w, "SignedHeaders=%s, ", strings.Join(sortedHeaderNames, ";")),
 		fprintfWrapper(w, "Signature=%s", signature),
 	); err != nil {
 		return "", err
@@ -277,6 +283,12 @@ func authHeaderString(
 }
 
 func canonicalQueryString(queryVals url.Values) (string, error) {
+
+	// AWS dictates that if duplicate keys exist, their values be
+	// sorted as well.
+	for _, values := range queryVals {
+		sort.Strings(values)
+	}
 
 	// AWS dictates that we use %20 for encoding spaces rather than +.
 	// All significant +s should already be encoded into their
@@ -373,28 +385,28 @@ func errorCollector(writers ...func() error) error {
 	return nil
 }
 
-// Time formats to try. We want to do everything we can to accept all
-// time formats, but ultimately we may fail. In the package scope so
-// it doesn't get initialized for every request.
-var timeFormats = []string{
-	time.RFC822,
-	ISO8601BasicFormat,
-	time.RFC1123,
-	time.ANSIC,
-	time.UnixDate,
-	time.RubyDate,
-	time.RFC822Z,
-	time.RFC850,
-	time.RFC1123Z,
-	time.RFC3339,
-	time.RFC3339Nano,
-	time.Kitchen,
-}
-
 // Retrieve the request time from the request. We will attempt to
 // parse whatever we find, but we will not make up a request date for
 // the user (i.e.: Magic!).
 func requestTime(req *http.Request) (time.Time, error) {
+
+	// Time formats to try. We want to do everything we can to accept
+	// all time formats, but ultimately we may fail. In the package
+	// scope so it doesn't get initialized for every request.
+	var timeFormats = []string{
+		time.RFC822,
+		ISO8601BasicFormat,
+		time.RFC1123,
+		time.ANSIC,
+		time.UnixDate,
+		time.RubyDate,
+		time.RFC822Z,
+		time.RFC850,
+		time.RFC1123Z,
+		time.RFC3339,
+		time.RFC3339Nano,
+		time.Kitchen,
+	}
 
 	// Get a date header.
 	var date string
@@ -412,7 +424,7 @@ func requestTime(req *http.Request) (time.Time, error) {
 	}
 
 	return time.Time{}, fmt.Errorf(
-		"Could not parse the given date. Please utilize on of the following formats: %s",
+		"Could not parse the given date. Please utilize one of the following formats: %s",
 		strings.Join(timeFormats, ","),
 	)
 }

@@ -142,8 +142,11 @@ func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
 	}
 	query.Add("Timestamp", timeNow().In(time.UTC).Format(time.RFC3339))
 	req.URL.RawQuery = query.Encode()
+	req.Header.Set("x-amz-date", time.Now().In(time.UTC).Format(aws.ISO8601BasicFormat))
 
-	ec2.Sign(req, ec2.Auth)
+	if err := ec2.Sign(req, ec2.Auth); err != nil {
+		return err
+	}
 
 	r, err := http.DefaultClient.Do(req)
 	if err != nil {

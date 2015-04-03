@@ -139,7 +139,7 @@ func (s *SigningSuite) TestV4MoreCompleteSignature(c *C) {
 	}
 	err = SignV4(req, testAuth, USEast.Name, "s3")
 	c.Assert(err, IsNil)
-	c.Check(req.Header.Get("Authorization"), Equals, "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request,SignedHeaders=host;range;x-amz-content-sha256;x-amz-date,Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41")
+	c.Check(req.Header.Get("Authorization"), Equals, "AWS4-HMAC-SHA256 Credential=AKIAIOSFODNN7EXAMPLE/20130524/us-east-1/s3/aws4_request, SignedHeaders=host;range;x-amz-content-sha256;x-amz-date, Signature=f0e8bdb87c964420e857bd35b5d6ed310bd44f0170aba48dd91039c6036bdb41")
 }
 
 //
