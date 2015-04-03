@@ -151,6 +151,14 @@ func (s *ClientTests) TestSecurityGroups(c *C) {
 	c.Assert(resp2.RequestId, Matches, ".+")
 }
 
+func (s *ClientTests) TestDescribeAccountAttributes(c *C) {
+
+	ec2 := ec2.New(s.ec2.Auth, aws.USEast, aws.SignV4Factory(aws.USEast.Name, "ec2"))
+	resp, err := ec2.AccountAttributes("supported-platforms")
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+}
+
 var sessionId = func() string {
 	buf := make([]byte, 8)
 	// if we have no randomness, we'll just make do, so ignore the error.
