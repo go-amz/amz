@@ -3,7 +3,7 @@
 //
 //   https://wiki.ubuntu.com/goamz
 //
-// Copyright (c) 2011 Canonical Ltd.
+// Copyright (c) 2011-2015 Canonical Ltd.
 //
 
 package aws
