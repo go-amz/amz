@@ -3,6 +3,7 @@
 //
 // https://wiki.ubuntu.com/goamz
 //
+
 package testutil
 
 import (
