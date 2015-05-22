@@ -101,6 +101,7 @@ type Instance struct {
 	ifaces              []ec2.NetworkInterface
 	blockDeviceMappings []ec2.InstanceBlockDeviceMapping
 	sourceDestCheck     bool
+	tags                []ec2.Tag
 }
 
 // permKey represents permission for a given security
@@ -479,6 +480,7 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"AttachVolume":                  (*Server).attachVolume,
 	"DetachVolume":                  (*Server).detachVolume,
 	"ModifyInstanceAttribute":       (*Server).modifyInstanceAttribute,
+	"CreateTags":                    (*Server).createTags,
 }
 
 const (
@@ -1281,6 +1283,7 @@ func (inst *Instance) ec2instance() ec2.Instance {
 		NetworkInterfaces:   inst.ifaces,
 		BlockDeviceMappings: blockDeviceMappings,
 		SourceDestCheck:     inst.sourceDestCheck,
+		Tags:                inst.tags,
 		// TODO the rest
 	}
 }
@@ -2534,6 +2537,100 @@ func (srv *Server) modifyInstanceAttribute(w http.ResponseWriter, req *http.Requ
 		RequestId: reqId,
 		Return:    true,
 	}
+}
+
+func (srv *Server) createTags(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
+	var resourceIds []string
+	var tags []ec2.Tag
+
+	for attr, vals := range req.Form {
+		if strings.HasPrefix(attr, "ResourceId.") {
+			fields := strings.SplitN(attr, ".", 2)
+			if len(fields) != 2 {
+				fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+			}
+			i := atoi(fields[1])
+			for i > len(resourceIds) {
+				resourceIds = append(resourceIds, "")
+			}
+			resourceIds[i-1] = vals[0]
+		} else if strings.HasPrefix(attr, "Tag.") {
+			fields := strings.SplitN(attr, ".", 3)
+			if len(fields) != 3 {
+				fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+			}
+			i := atoi(fields[1])
+			for i > len(tags) {
+				tags = append(tags, ec2.Tag{})
+			}
+			switch fields[2] {
+			case "Key":
+				tags[i-1].Key = vals[0]
+			case "Value":
+				tags[i-1].Value = vals[0]
+			default:
+				fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+			}
+		} else {
+			switch attr {
+			case "AWSAccessKeyId", "Action", "Signature", "SignatureMethod", "SignatureVersion",
+				"Version", "Timestamp":
+				continue
+			default:
+				fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
+			}
+		}
+	}
+
+	// Each resource can have a maximum of 10 tags.
+	const tagLimit = 10
+	for _, resourceId := range resourceIds {
+		resourceTags := srv.tags(resourceId)
+		for _, tag := range tags {
+			var found bool
+			for i := range *resourceTags {
+				if (*resourceTags)[i].Key != tag.Key {
+					continue
+				}
+				(*resourceTags)[i].Value = tag.Value
+				found = true
+				break
+			}
+			if found {
+				continue
+			}
+			if len(*resourceTags) == tagLimit {
+				fatalf(400, "TagLimitExceeded", "The maximum number of Tags for a resource has been reached.")
+			}
+			*resourceTags = append(*resourceTags, tag)
+		}
+	}
+
+	return &ec2.SimpleResp{
+		XMLName:   xml.Name{defaultXMLName, "CreateTagsResponse"},
+		RequestId: reqId,
+		Return:    true,
+	}
+}
+
+func (srv *Server) tags(id string) *[]ec2.Tag {
+	parts := strings.SplitN(id, "-", 2)
+	if len(parts) == 0 {
+		fatalf(400, "InvalidID", "The ID '%s' is not valid", id)
+	}
+	switch parts[0] {
+	case "i":
+		if inst, ok := srv.instances[id]; ok {
+			return &inst.tags
+		}
+	case "vol":
+		if vol, ok := srv.volumes[id]; ok {
+			return &vol.Tags
+		}
+		// TODO(axw) more resources as necessary.
+	}
+	fatalf(400, "InvalidID", "The ID '%s' is not valid", id)
+	return nil
 }
 
 func (r *reservation) hasRunningMachine() bool {

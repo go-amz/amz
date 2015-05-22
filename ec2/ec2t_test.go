@@ -1324,6 +1324,84 @@ func (s *ServerTests) testModifyInstanceAttributeSourceDestCheck(c *C) {
 	c.Assert(inst.SourceDestCheck, Equals, false)
 }
 
+func (s *ServerTests) TestCreateTags(c *C) {
+	list, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		AvailZone:    defaultAvailZone,
+	})
+	c.Assert(err, IsNil)
+
+	inst := list.Instances[0]
+	c.Assert(inst, NotNil)
+
+	id := inst.InstanceId
+	defer terminateInstances(c, s.ec2, []string{id})
+
+	c.Check(inst.Tags, HasLen, 0)
+	for i := 0; i < 2; i++ {
+		_, err = s.ec2.CreateTags([]string{id}, []ec2.Tag{
+			{"tag1", ""},
+			{"tag2", ""},
+		})
+		c.Check(err, IsNil)
+	}
+
+	_, err = s.ec2.CreateTags([]string{id}, []ec2.Tag{
+		{"tag2", "2gat"},
+	})
+
+	resp, err := s.ec2.Instances([]string{id}, nil)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Reservations, HasLen, 1)
+	c.Assert(resp.Reservations[0].Instances, HasLen, 1)
+	inst = resp.Reservations[0].Instances[0]
+
+	tags := make(map[string]string)
+	for _, tag := range inst.Tags {
+		tags[tag.Key] = tag.Value
+	}
+	c.Check(tags, DeepEquals, map[string]string{
+		"tag1": "",
+		"tag2": "2gat",
+	})
+}
+
+func (s *ServerTests) TestCreateTagsLimitExceeded(c *C) {
+	list, err := s.ec2.RunInstances(&ec2.RunInstances{
+		ImageId:      imageId,
+		InstanceType: "t1.micro",
+		AvailZone:    defaultAvailZone,
+	})
+	c.Assert(err, IsNil)
+	inst := list.Instances[0]
+	c.Assert(inst, NotNil)
+	id := inst.InstanceId
+	defer terminateInstances(c, s.ec2, []string{id})
+
+	_, err = s.ec2.CreateTags([]string{id}, []ec2.Tag{
+		{"tag1", ""},
+		{"tag2", ""},
+		{"tag3", ""},
+		{"tag4", ""},
+		{"tag5", ""},
+		{"tag6", ""},
+		{"tag7", ""},
+		{"tag8", ""},
+		{"tag9", ""},
+		{"tag10", ""},
+		{"tag11", ""},
+	})
+	c.Check(err, NotNil)
+	c.Check(errorCode(err), Equals, "TagLimitExceeded")
+}
+
+func (s *ServerTests) TestCreateTagsInvalidId(c *C) {
+	_, err := s.ec2.CreateTags([]string{"non-sense"}, []ec2.Tag{{"key", "value"}})
+	c.Check(err, NotNil)
+	c.Check(errorCode(err), Equals, "InvalidID")
+}
+
 // errorCode returns the code of the given error, assuming it's not
 // nil and it's an instance of *ec2.Error. It returns an empty string
 // otherwise.
