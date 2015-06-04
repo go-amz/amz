@@ -291,11 +291,19 @@ func (s *ServerTests) testVolumeAttachments(c *C) {
 	resp, err := s.ec2.Volumes([]string{volId}, nil)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Volumes, HasLen, 1)
+	c.Assert(resp.Volumes[0].Status, Equals, "in-use")
 	c.Assert(resp.Volumes[0].Attachments, HasLen, 1)
 	c.Assert(resp.Volumes[0].Attachments[0].InstanceId, Equals, instId)
 
 	_, err = s.ec2.DetachVolume(volId, "", "", false)
 	c.Assert(err, IsNil)
+
+	for a := testAttempt.Start(); resp.Volumes[0].Status == "in-use" && a.Next(); {
+		resp, err = s.ec2.Volumes([]string{volId}, nil)
+		c.Assert(err, IsNil)
+		c.Assert(resp.Volumes, HasLen, 1)
+	}
+	c.Assert(resp.Volumes[0].Status, Equals, "available")
 }
 
 func assertVolumeAttachment(c *C, obtained *ec2.VolumeAttachmentResp, volId, instanceId, device string) {

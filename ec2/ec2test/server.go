@@ -2365,11 +2365,13 @@ func (srv *Server) attachVolume(w http.ResponseWriter, req *http.Request, reqId 
 	if _, ok := srv.volumeAttachments[ec2VolAttachment.VolumeId]; ok {
 		fatalf(400, "VolumeInUse", "Volume %s is already attached", ec2VolAttachment.VolumeId)
 	}
+	v := srv.volume(ec2VolAttachment.VolumeId)
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	va := &volumeAttachment{ec2VolAttachment}
 	va.Status = "attached"
+	v.Status = "in-use"
 	srv.volumeAttachments[va.VolumeId] = va
 	var resp struct {
 		XMLName xml.Name
@@ -2444,11 +2446,12 @@ func (srv *Server) detachVolume(w http.ResponseWriter, req *http.Request, reqId 
 	// Get attachment first so if not found, the expected error is returned.
 	va := srv.volumeAttachment(vId)
 	// Validate volume exists.
-	_ = srv.volume(vId)
+	v := srv.volume(vId)
 
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	delete(srv.volumeAttachments, vId)
+	v.Status = "available"
 	var resp struct {
 		XMLName xml.Name
 		ec2.VolumeAttachmentResp
