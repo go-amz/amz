@@ -218,8 +218,8 @@ func EnvAuth() (auth Auth, err error) {
 	auth.SecretKey = os.Getenv("AWS_SECRET_ACCESS_KEY")
 	// We fallback to EC2_ env variables if the AWS_ variants are not used.
 	if auth.AccessKey == "" && auth.SecretKey == "" {
-		auth.AccessKey = os.Getenv("EC2_ACCESS_KEY")
-		auth.SecretKey = os.Getenv("EC2_SECRET_KEY")
+		auth.AccessKey = os.Getenv("AWS_ACCESS_KEY")
+		auth.SecretKey = os.Getenv("AWS_SECRET_KEY")
 	}
 	if auth.AccessKey == "" {
 		err = errors.New("AWS_ACCESS_KEY_ID not found in environment")
