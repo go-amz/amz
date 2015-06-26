@@ -56,6 +56,15 @@ func (s *S) TestEnvAuth(c *C) {
 
 func (s *S) TestEnvAuthLegacy(c *C) {
 	os.Clearenv()
+	os.Setenv("EC2_SECRET_KEY", "secret")
+	os.Setenv("EC2_ACCESS_KEY", "access")
+	auth, err := aws.EnvAuth()
+	c.Assert(err, IsNil)
+	c.Assert(auth, Equals, aws.Auth{SecretKey: "secret", AccessKey: "access"})
+}
+
+func (s *S) TestEnvAuthAws(c *C) {
+	os.Clearenv()
 	os.Setenv("AWS_SECRET_KEY", "secret")
 	os.Setenv("AWS_ACCESS_KEY", "access")
 	auth, err := aws.EnvAuth()
