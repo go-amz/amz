@@ -154,16 +154,20 @@ func killBucket(b *s3.Bucket) {
 }
 
 func (s *ClientTests) TestSignedUrl(c *C) {
-
 	b := testBucket(s.s3)
 	err := b.PutBucket(s3.PublicRead)
 	c.Assert(err, IsNil)
+	s.testSignedUrl(c, b, "name")
+	// Test that various special characters get escaped properly.
+	s.testSignedUrl(c, b, "&@$=:,!-_.*'( )")
+}
 
-	err = b.Put("name", []byte("test for signed URLs."), "text/plain", s3.Private)
+func (s *ClientTests) testSignedUrl(c *C, b *s3.Bucket, name string) {
+	err := b.Put(name, []byte("test for signed URLs."), "text/plain", s3.Private)
 	c.Assert(err, IsNil)
-	defer b.Del("name")
+	defer b.Del(name)
 
-	req, err := http.NewRequest("GET", b.URL("name"), nil)
+	req, err := http.NewRequest("GET", b.URL(name), nil)
 	c.Assert(err, IsNil)
 	resp, err := http.DefaultClient.Do(req)
 	c.Assert(err, IsNil)
@@ -171,7 +175,7 @@ func (s *ClientTests) TestSignedUrl(c *C) {
 	c.Check(err, NotNil)
 	c.Check(err.(*s3.Error).Code, Equals, "AccessDenied")
 
-	url, err := b.SignedURL("name", 24*time.Hour)
+	url, err := b.SignedURL(name, 24*time.Hour)
 	c.Assert(err, IsNil)
 
 	req, err = http.NewRequest("GET", url, nil)
