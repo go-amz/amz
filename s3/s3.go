@@ -160,8 +160,12 @@ func (b *Bucket) DelBucket() (err error) {
 	if err := b.S3.Sign(req, b.Auth); err != nil {
 		return err
 	}
-	_, err = requestRetryLoop(req, attempts)
-	return err
+	resp, err := requestRetryLoop(req, attempts)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 // Get retrieves an object from an S3 bucket.
@@ -261,9 +265,10 @@ func (b *Bucket) PutReaderWithHeader(path string, r io.Reader, length int64, con
 		return err
 	}
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		return buildError(resp)
+		return buildError(resp) // closes body
 	}
 
+	resp.Body.Close()
 	return nil
 }
 
@@ -285,9 +290,12 @@ func (b *Bucket) Del(path string) error {
 		return err
 	}
 
-	_, err = http.DefaultClient.Do(req)
-
-	return err
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	resp.Body.Close()
+	return nil
 }
 
 // The ListResp type holds the results of a List bucket operation.
@@ -399,17 +407,16 @@ func (b *Bucket) List(prefix, delim, marker string, max int) (*ListResp, error) 
 	}
 
 	resp, err := requestRetryLoop(req, attempts)
-	if err == nil {
-		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-			err = buildError(resp)
-		}
-	}
 	if err != nil {
 		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
+		return nil, buildError(resp) // closes body
 	}
 
 	var result ListResp
 	err = xml.NewDecoder(resp.Body).Decode(&result)
+	resp.Body.Close()
 	return &result, nil
 }
 
