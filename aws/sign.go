@@ -45,22 +45,14 @@ func SignV2(req *http.Request, auth Auth) (err error) {
 	queryVals.Set("SignatureVersion", "2")
 	queryVals.Set("SignatureMethod", "HmacSHA256")
 
-	queryStr, err := canonicalQueryString(queryVals)
-	if err != nil {
-		return err
-	}
-
-	// The algorithm states that if the path is empty, to just use a "/".
-	path := req.URL.Path
-	if path == "" {
-		path = "/"
-	}
+	uriStr := canonicalURI(req.URL)
+	queryStr := canonicalQueryString(queryVals)
 
 	payload := new(bytes.Buffer)
 	if err := errorCollector(
 		fprintfWrapper(payload, "%s\n", requestMethodVerb(req.Method)),
 		fprintfWrapper(payload, "%s\n", req.Host),
-		fprintfWrapper(payload, "%s\n", path),
+		fprintfWrapper(payload, "%s\n", uriStr),
 		fprintfWrapper(payload, "%s", queryStr),
 	); err != nil {
 		return err
@@ -197,21 +189,13 @@ func canonicalRequest(
 	debug.Printf("canHdr:\n\"\"\"\n%s\n\"\"\"", canHdr)
 	debug.Printf("signedHeader: %s\n\n", strings.Join(sortedHdrNames, ";"))
 
-	var queryStr string
-	if queryStr, err = canonicalQueryString(req.URL.Query()); err != nil {
-		return
-	}
-
-	// AWS requires that if the path is empty, we pass in a "/".
-	path := req.URL.Path
-	if path == "" {
-		path = "/"
-	}
+	uriStr := canonicalURI(req.URL)
+	queryStr := canonicalQueryString(req.URL.Query())
 
 	c := new(bytes.Buffer)
 	if err := errorCollector(
 		fprintfWrapper(c, "%s\n", requestMethodVerb(req.Method)),
-		fprintfWrapper(c, "%s\n", path),
+		fprintfWrapper(c, "%s\n", uriStr),
 		fprintfWrapper(c, "%s\n", queryStr),
 		fprintfWrapper(c, "%s\n", canHdr),
 		fprintfWrapper(c, "%s\n", strings.Join(sortedHdrNames, ";")),
@@ -282,7 +266,23 @@ func authHeaderString(
 	return w.String(), nil
 }
 
-func canonicalQueryString(queryVals url.Values) (string, error) {
+func canonicalURI(u *url.URL) string {
+
+	// The algorithm states that if the path is empty, to just use a "/".
+	if u.Path == "" {
+		return "/"
+	}
+
+	// Each path segment must be URI-encoded.
+	segments := strings.Split(u.Path, "/")
+	for i, segment := range segments {
+		segments[i] = goToAwsUrlEncoding(url.QueryEscape(segment))
+	}
+
+	return strings.Join(segments, "/")
+}
+
+func canonicalQueryString(queryVals url.Values) string {
 
 	// AWS dictates that if duplicate keys exist, their values be
 	// sorted as well.
@@ -290,10 +290,14 @@ func canonicalQueryString(queryVals url.Values) (string, error) {
 		sort.Strings(values)
 	}
 
+	return goToAwsUrlEncoding(queryVals.Encode())
+}
+
+func goToAwsUrlEncoding(urlEncoded string) string {
 	// AWS dictates that we use %20 for encoding spaces rather than +.
 	// All significant +s should already be encoded into their
 	// hexadecimal equivalents before doing the string replace.
-	return strings.Replace(queryVals.Encode(), "+", "%20", -1), nil
+	return strings.Replace(urlEncoded, "+", "%20", -1)
 }
 
 func canonicalHeaders(sortedHeaderNames []string, host string, hdr http.Header) (string, error) {

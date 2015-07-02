@@ -37,6 +37,18 @@ func (s *SigningSuite) TestV4SignedUrl(c *C) {
 	c.Check(req.URL.String(), Equals, "https://examplebucket.s3.amazonaws.com/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-Signature=aeeed9bbccd4d02ee5c0109b86d86835f995330da4c265957d157751f604d404&X-Amz-SignedHeaders=host")
 }
 
+func (s *SigningSuite) TestV4SignedUrlReserved(c *C) {
+
+	auth := Auth{"AKIAIOSFODNN7EXAMPLE", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"}
+	req, err := http.NewRequest("GET", "https://examplebucket.s3.amazonaws.com/some:reserved,characters", nil)
+	req.Header.Add("date", "Fri, 24 May 2013 00:00:00 GMT")
+	c.Assert(err, IsNil)
+	err = SignV4URL(req, auth, USEast.Name, "s3", 86400*time.Second)
+	c.Assert(err, IsNil)
+
+	c.Check(req.URL.String(), Equals, "https://examplebucket.s3.amazonaws.com/some:reserved,characters?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20130524%2Fus-east-1%2Fs3%2Faws4_request&X-Amz-Date=20130524T000000Z&X-Amz-Expires=86400&X-Amz-Signature=ac81e03593d6fc22ac045b9353b0242da755be2af80b981eb13917d8b9cf20a4&X-Amz-SignedHeaders=host")
+}
+
 func (s *SigningSuite) TestV4StringToSign(c *C) {
 
 	mockTime, err := time.Parse(time.RFC3339, "2011-09-09T23:36:00Z")
