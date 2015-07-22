@@ -223,6 +223,41 @@ func (s *ServerTests) TestVolumes(c *C) {
 	assertVolume(c, list.Volumes[0], id2, vol2.VolumeType, vol2.AvailZone, 101, vol2.IOPS)
 }
 
+func (s *ServerTests) TestVolumesTagFilter(c *C) {
+	createVolume := func() string {
+		resp, err := s.ec2.CreateVolume(ec2.CreateVolume{
+			AvailZone:  "us-east-1b",
+			VolumeType: "standard",
+			VolumeSize: 1,
+		})
+		c.Assert(err, IsNil)
+		return resp.Id
+	}
+	destroyVolume := func(id string) {
+		_, err := s.ec2.DeleteVolume(id)
+		c.Assert(err, IsNil)
+	}
+
+	volId1 := createVolume()
+	defer destroyVolume(volId1)
+	volId2 := createVolume()
+	defer destroyVolume(volId2)
+
+	filter := ec2.NewFilter()
+	filter.Add("tag:key", "value")
+	resp, err := s.ec2.Volumes(nil, filter)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Volumes, HasLen, 0)
+
+	_, err = s.ec2.CreateTags([]string{volId1}, []ec2.Tag{{"key", "value"}})
+	c.Assert(err, IsNil)
+
+	resp, err = s.ec2.Volumes(nil, filter)
+	c.Assert(err, IsNil)
+	c.Assert(resp.Volumes, HasLen, 1)
+	c.Assert(resp.Volumes[0].Id, Equals, volId1)
+}
+
 func assertVolume(c *C, obtained ec2.Volume, expectId, expectType, availZone string, expectSize int, expectIOPS int64) {
 	if expectId != "" {
 		c.Check(obtained.Id, Equals, expectId)

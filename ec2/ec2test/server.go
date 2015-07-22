@@ -2198,6 +2198,10 @@ func (v *volume) matchAttr(attr, value string) (ok bool, err error) {
 	if strings.HasPrefix(attr, "attachment.") {
 		return false, fmt.Errorf("%q filter is not implemented", attr)
 	}
+	if strings.HasPrefix(attr, "tag:") {
+		key := attr[len("tag:"):]
+		return matchTag(v.Tags, key, value), nil
+	}
 	switch attr {
 	case "volume-type":
 		return v.VolumeType == value, nil
@@ -2786,4 +2790,13 @@ func fatalf(statusCode int, code string, f string, a ...interface{}) {
 		Code:       code,
 		Message:    fmt.Sprintf(f, a...),
 	})
+}
+
+func matchTag(tags []ec2.Tag, key, value string) bool {
+	for _, tag := range tags {
+		if tag.Key == key {
+			return tag.Value == value
+		}
+	}
+	return false
 }
