@@ -22,7 +22,7 @@ import (
 
 func (s *ServerTests) TestBlockDeviceMappings(c *C) {
 	blockDeviceMappings := []ec2.BlockDeviceMapping{{
-		DeviceName:          "/dev/sda1",
+		DeviceName:          "/dev/sda2",
 		VolumeSize:          8,
 		DeleteOnTermination: true,
 	}, {
@@ -69,10 +69,15 @@ func (s *ServerTests) TestBlockDeviceMappings(c *C) {
 
 	// There should be one item for /dev/sda1; ephemeral devices
 	// should not show up.
-	c.Assert(inst.BlockDeviceMappings, HasLen, 1)
+	c.Assert(inst.BlockDeviceMappings, HasLen, 2)
 	c.Assert(inst.BlockDeviceMappings[0].DeviceName, Equals, "/dev/sda1")
 	c.Assert(inst.BlockDeviceMappings[0].DeleteOnTermination, Equals, true)
 	c.Assert(inst.BlockDeviceMappings[0].AttachTime, Not(Equals), "")
 	c.Assert(inst.BlockDeviceMappings[0].Status, Not(Equals), "")
 	c.Assert(inst.BlockDeviceMappings[0].VolumeId, Not(Equals), "")
+	c.Assert(inst.BlockDeviceMappings[1].DeviceName, Equals, "/dev/sda2")
+	c.Assert(inst.BlockDeviceMappings[1].DeleteOnTermination, Equals, true)
+	c.Assert(inst.BlockDeviceMappings[1].AttachTime, Not(Equals), "")
+	c.Assert(inst.BlockDeviceMappings[1].Status, Not(Equals), "")
+	c.Assert(inst.BlockDeviceMappings[1].VolumeId, Not(Equals), "")
 }
