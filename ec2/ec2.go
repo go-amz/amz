@@ -312,6 +312,8 @@ type Instance struct {
 	SecurityGroups      []SecurityGroup              `xml:"groupSet>item"`
 	NetworkInterfaces   []NetworkInterface           `xml:"networkInterfaceSet>item"`
 	BlockDeviceMappings []InstanceBlockDeviceMapping `xml:"blockDeviceMapping>item"`
+	RootDeviceType      string                       `xml:"rootDeviceType"`
+	RootDeviceName      string                       `xml:"rootDeviceName"`
 }
 
 // InstanceBlockDeviceMapping describes a block device mapping.

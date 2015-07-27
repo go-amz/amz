@@ -46,10 +46,11 @@ type Action struct {
 
 // Server implements an EC2 simulator for use in testing.
 type Server struct {
-	url      string
-	listener net.Listener
-	mu       sync.Mutex
-	reqs     []*Action
+	url             string
+	listener        net.Listener
+	mu              sync.Mutex
+	reqs            []*Action
+	createRootDisks bool
 
 	attributes           map[string][]string       // attr name -> values
 	instances            map[string]*Instance      // id -> instance
@@ -102,6 +103,8 @@ type Instance struct {
 	blockDeviceMappings []ec2.InstanceBlockDeviceMapping
 	sourceDestCheck     bool
 	tags                []ec2.Tag
+	rootDeviceType      string
+	rootDeviceName      string
 }
 
 // permKey represents permission for a given security
@@ -570,6 +573,14 @@ func NewServer() (*Server, error) {
 // Quit closes down the server.
 func (srv *Server) Quit() {
 	srv.listener.Close()
+}
+
+// SetCreateRootDisks records whether or not the server should create
+// root disks for each instance created. It defaults to false.
+func (srv *Server) SetCreateRootDisks(create bool) {
+	srv.mu.Lock()
+	srv.createRootDisks = create
+	srv.mu.Unlock()
 }
 
 // SetInitialInstanceState sets the state that any new instances will be started in.
@@ -1121,8 +1132,8 @@ func (srv *Server) runInstances(w http.ResponseWriter, req *http.Request, reqId 
 			inst.vpcId = instSubnet.VPCId
 		}
 		inst.UserData = userData
-		inst.blockDeviceMappings = srv.createBlockDeviceMappingsOnRun(
-			inst.id(), blockDeviceMappings,
+		inst.blockDeviceMappings = append(inst.blockDeviceMappings,
+			srv.createBlockDeviceMappingsOnRun(inst.id(), blockDeviceMappings)...,
 		)
 		resp.Instances = append(resp.Instances, inst.ec2instance())
 	}
@@ -1195,7 +1206,41 @@ func (srv *Server) newInstance(r *reservation, instType string, imageId string, 
 	id := inst.id()
 	srv.instances[id] = inst
 	r.instances[id] = inst
+
+	if srv.createRootDisks {
+		// create a root disk for the instance
+		inst.rootDeviceType = "ebs"
+		inst.rootDeviceName = "/dev/sda1"
+		volume := srv.newVolume("magnetic", 8)
+		volume.AvailZone = availZone
+		volume.Status = "in-use"
+		volumeAttachment := &volumeAttachment{}
+		volumeAttachment.Status = "attached"
+		volumeAttachment.DeleteOnTermination = true
+		volumeAttachment.Device = inst.rootDeviceName
+		srv.volumeAttachments[volume.Id] = volumeAttachment
+		inst.blockDeviceMappings = []ec2.InstanceBlockDeviceMapping{{
+			DeviceName:          inst.rootDeviceName,
+			VolumeId:            volume.Id,
+			AttachTime:          time.Now().Format(time.RFC3339),
+			Status:              volumeAttachment.Status,
+			DeleteOnTermination: volumeAttachment.DeleteOnTermination,
+		}}
+	}
+
 	return inst
+}
+
+func (srv *Server) newVolume(volumeType string, size int) *volume {
+	// Create a volume and volume attachment too.
+	volume := &volume{}
+	volume.Id = fmt.Sprintf("vol-%d", srv.volumeId.next())
+	volume.Status = "available"
+	volume.CreateTime = time.Now().Format(time.RFC3339)
+	volume.VolumeType = volumeType
+	volume.Size = size
+	srv.volumes[volume.Id] = volume
+	return volume
 }
 
 func (srv *Server) newReservation(groups []*securityGroup) *reservation {
@@ -1284,6 +1329,8 @@ func (inst *Instance) ec2instance() ec2.Instance {
 		BlockDeviceMappings: blockDeviceMappings,
 		SourceDestCheck:     inst.sourceDestCheck,
 		Tags:                inst.tags,
+		RootDeviceType:      inst.rootDeviceType,
+		RootDeviceName:      inst.rootDeviceName,
 		// TODO the rest
 	}
 }
@@ -2251,7 +2298,7 @@ func (srv *Server) createVolume(w http.ResponseWriter, req *http.Request, reqId 
 }
 
 func (srv *Server) parseVolume(req *http.Request) ec2.Volume {
-	volume := ec2.Volume{}
+	volume := srv.newVolume("magnetic", 1)
 	for attr, vals := range req.Form {
 		switch attr {
 		case "AWSAccessKeyId", "Action", "Signature", "SignatureMethod", "SignatureVersion",
@@ -2281,16 +2328,7 @@ func (srv *Server) parseVolume(req *http.Request) ec2.Volume {
 			fatalf(400, "InvalidParameterValue", "unknown field %s: %s", attr, vals[0])
 		}
 	}
-	volume.Id = fmt.Sprintf("vol-%d", srv.volumeId.next())
-	volume.Status = "available"
-	volume.CreateTime = time.Now().Format(time.RFC3339)
-	if volume.VolumeType == "" {
-		volume.VolumeType = "magnetic"
-	}
-	if volume.Size == 0 {
-		volume.Size = 1
-	}
-	return volume
+	return volume.Volume
 }
 
 func (srv *Server) deleteVolume(w http.ResponseWriter, req *http.Request, reqId string) interface{} {

@@ -32,6 +32,7 @@ func (s *LocalServer) SetUp(c *C) {
 	srv, err := ec2test.NewServer()
 	c.Assert(err, IsNil)
 	c.Assert(srv, NotNil)
+	srv.SetCreateRootDisks(true)
 
 	// Add default attributes.
 	srv.SetInitialAttributes(map[string][]string{
