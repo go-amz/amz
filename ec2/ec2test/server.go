@@ -1215,6 +1215,7 @@ func (srv *Server) newInstance(r *reservation, instType string, imageId string, 
 		volume.AvailZone = availZone
 		volume.Status = "in-use"
 		volumeAttachment := &volumeAttachment{}
+		volumeAttachment.InstanceId = inst.id()
 		volumeAttachment.Status = "attached"
 		volumeAttachment.DeleteOnTermination = true
 		volumeAttachment.Device = inst.rootDeviceName
