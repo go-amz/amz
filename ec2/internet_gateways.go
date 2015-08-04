@@ -22,14 +22,14 @@ type InternetGateway struct {
 	// VPCId is the id of the VPC this IGW is attached to.
 	// An IGW can be attached to only one VPC at a time.
 	// Source: http://goo.gl/6ycqAx (Amazon VPC Limits).
-	VPCId string `xml:attachmentSet>item>vpcId"`
+	VPCId string `xml:"attachmentSet>item>vpcId"`
 
 	// AttachmentState is the current state of the attachment.
 	// Valid values: attaching | attached | detaching | detached
-	AttachmentState string `xml:attachmentSet>item>state"`
+	AttachmentState string `xml:"attachmentSet>item>state"`
 
 	// Tags holds any tags associated with the IGW.
-	Tags []Tag `xml:tagSet>item"`
+	Tags []Tag `xml:"tagSet>item"`
 }
 
 // InternetGatewaysResp is the response to a InternetGateways request.
@@ -37,7 +37,7 @@ type InternetGateway struct {
 // See http://goo.gl/syjv2p for more details.
 type InternetGatewaysResp struct {
 	RequestId        string            `xml:"requestId"`
-	InternetGateways []InternetGateway `xml:internetGatewaySet>item"`
+	InternetGateways []InternetGateway `xml:"internetGatewaySet>item"`
 }
 
 // InternetGateways describes one or more Internet Gateways (IGWs).
