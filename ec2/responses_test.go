@@ -1122,3 +1122,22 @@ var DetachVolumeExample = `
    <attachTime>YYYY-MM-DDTHH:MM:SS.000Z</attachTime>
 </DetachVolumeResponse>
 `
+
+// http://goo.gl/syjv2p
+var DescribeInternetGatewaysExample = `
+<DescribeInternetGatewaysResponse xmlns="http://ec2.amazonaws.com/doc/2015-04-15/">
+   <requestId>59dbff89-35bd-4eac-99ed-be587EXAMPLE</requestId> 
+   <internetGatewaySet>  
+      <item>
+         <internetGatewayId>igw-eaad4883EXAMPLE</internetGatewayId>
+         <attachmentSet>
+            <item>
+               <vpcId>vpc-11ad4878</vpcId>
+               <state>available</state>
+            </item>
+         </attachmentSet>
+         <tagSet/>
+      </item>
+   </internetGatewaySet>
+</DescribeInternetGatewaysResponse>
+`
