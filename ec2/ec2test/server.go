@@ -37,6 +37,7 @@ type Server struct {
 	groups               map[string]*securityGroup // id -> group
 	zones                []availabilityZone
 	vpcs                 map[string]*vpc                 // id -> vpc
+	internetGateways     map[string]*internetGateway     // id -> igw
 	subnets              map[string]*subnet              // id -> subnet
 	ifaces               map[string]*iface               // id -> iface
 	networkAttachments   map[string]*interfaceAttachment // id -> attachment
@@ -47,6 +48,7 @@ type Server struct {
 	reservationId        counter
 	groupId              counter
 	vpcId                counter
+	igwId                counter
 	dhcpOptsId           counter
 	subnetId             counter
 	volumeId             counter
@@ -62,6 +64,7 @@ func NewServer() (*Server, error) {
 		instances:            make(map[string]*Instance),
 		groups:               make(map[string]*securityGroup),
 		vpcs:                 make(map[string]*vpc),
+		internetGateways:     make(map[string]*internetGateway),
 		subnets:              make(map[string]*subnet),
 		ifaces:               make(map[string]*iface),
 		networkAttachments:   make(map[string]*interfaceAttachment),
