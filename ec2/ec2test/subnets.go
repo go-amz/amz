@@ -20,6 +20,86 @@ import (
 	"gopkg.in/amz.v3/ec2"
 )
 
+// AddSubnet inserts the given subnet in the test server, as if it was
+// created using the simulated AWS API. The Id field of v is ignored
+// and replaced by the next subnetId counter value, prefixed by
+// "subnet-". The VPCId field of sub must be contain an existing VPC
+// id, and the AvailZone field must contain an existing AZ, otherwise
+// errors are returned. Finally, if AvailableIPCount is negative it is
+func (srv *Server) AddSubnet(sub ec2.Subnet) (ec2.Subnet, error) {
+	zeroSubnet := ec2.Subnet{}
+
+	if sub.VPCId == "" {
+		return zeroSubnet, fmt.Errorf("empty VPCId field")
+	}
+	if sub.AvailZone == "" {
+		return zeroSubnet, fmt.Errorf("empty AvailZone field")
+	}
+
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	if _, found := srv.vpcs[sub.VPCId]; !found {
+		return zeroSubnet, fmt.Errorf("no such VPC %q", sub.VPCId)
+	}
+	if _, found := srv.zones[sub.AvailZone]; !found {
+		return zeroSubnet, fmt.Errorf("no such availability zone %q", sub.AvailZone)
+	}
+
+	added := &subnet{sub}
+	added.Id = fmt.Sprintf("subnet-%d", srv.subnetId.next())
+	srv.subnets[added.Id] = added
+	return added.Subnet, nil
+}
+
+// UpdateSubnet updates the subnet info stored in the test server,
+// matching the Id field of v, replacing all the other values with v's
+// field values. It's an error to try to update a subnet with unknown
+// or empty Id or VPCId.
+func (srv *Server) UpdateSubnet(sub ec2.Subnet) error {
+	if sub.Id == "" {
+		return fmt.Errorf("missing subnet id")
+	}
+	if sub.VPCId == "" {
+		return fmt.Errorf("missing VPC id")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if _, found := srv.vpcs[sub.VPCId]; !found {
+		return fmt.Errorf("VPC %q not found", sub.VPCId)
+	}
+	subnet, found := srv.subnets[sub.Id]
+	if !found {
+		return fmt.Errorf("subnet %q not found", sub.Id)
+	}
+	subnet.State = sub.State
+	subnet.VPCId = sub.VPCId
+	subnet.CIDRBlock = sub.CIDRBlock
+	subnet.AvailableIPCount = sub.AvailableIPCount
+	subnet.AvailZone = sub.AvailZone
+	subnet.DefaultForAZ = sub.DefaultForAZ
+	subnet.MapPublicIPOnLaunch = sub.MapPublicIPOnLaunch
+	subnet.Tags = append([]ec2.Tag{}, sub.Tags...)
+	srv.subnets[sub.Id] = subnet
+	return nil
+}
+
+// RemoveSubnet removes an existing subnet with the given subnetId
+// from the test server. It's an error to try to remove an unknown or
+// empty subnetId.
+func (srv *Server) RemoveSubnet(subnetId string) error {
+	if subnetId == "" {
+		return fmt.Errorf("missing subnet id")
+	}
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+	if _, found := srv.subnets[subnetId]; found {
+		delete(srv.subnets, subnetId)
+		return nil
+	}
+	return fmt.Errorf("subnet %q not found", subnetId)
+}
+
 type subnet struct {
 	ec2.Subnet
 }
