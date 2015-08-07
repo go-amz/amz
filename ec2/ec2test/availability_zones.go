@@ -17,15 +17,29 @@ import (
 	"gopkg.in/amz.v3/ec2"
 )
 
-// SetAvailabilityZones initializes the availability zones the test
+// SetAvailabilityZones replaces the availability zones the test
 // server is returning.
+//
+// NOTE: If zones does not contain one or more existing zones those
+// existing zones are removed along with any subnets that are
+// associated with them!
 func (srv *Server) SetAvailabilityZones(zones []ec2.AvailabilityZoneInfo) {
 	srv.mu.Lock()
-	srv.zones = make([]availabilityZone, len(zones))
-	for i, z := range zones {
-		srv.zones[i] = availabilityZone{z}
+	defer srv.mu.Unlock()
+	oldZones := srv.zones
+	srv.zones = make(map[string]availabilityZone)
+	for _, z := range zones {
+		if _, exists := oldZones[z.Name]; exists {
+			// Remove any subnets attached to this zone before
+			// removing it.
+			for _, sub := range srv.subnets {
+				if sub.AvailZone == z.Name {
+					delete(srv.subnets, sub.Id)
+				}
+			}
+		}
+		srv.zones[z.Name] = availabilityZone{z}
 	}
-	srv.mu.Unlock()
 }
 
 type availabilityZone struct {
