@@ -24,14 +24,12 @@ import (
 // a VPC the test server knows about. If VPCId is empty the IGW is
 // considered not attached.
 func (srv *Server) AddInternetGateway(igw ec2.InternetGateway) (ec2.InternetGateway, error) {
-	if igw.Id == "" {
-		return ec2.InternetGateway{}, fmt.Errorf("missing internet gateway id")
-	}
+	zeroGateway := ec2.InternetGateway{}
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 	if igw.VPCId != "" {
 		if _, found := srv.vpcs[igw.VPCId]; !found {
-			return ec2.InternetGateway{}, fmt.Errorf("vpc %s not found", igw.VPCId)
+			return zeroGateway, fmt.Errorf("VPC %q not found", igw.VPCId)
 		}
 	}
 	added := &internetGateway{igw}
@@ -43,9 +41,9 @@ func (srv *Server) AddInternetGateway(igw ec2.InternetGateway) (ec2.InternetGate
 // UpdateInternetGateway updates the internet gateway info stored in
 // the test server, matching the Id field of igw, replacing all the
 // other values with igw's field values. Both the Id and VPCId fields
-// must refer to entities known by the test server, otherwise errors
-// are returned. If VPCId is empty, this is treated as if the IGW is
-// not attached to a VPC.
+// (the latter when set) must refer to entities known by the test
+// server, otherwise errors are returned. If VPCId is empty, this is
+// treated as if the IGW is not attached to a VPC.
 func (srv *Server) UpdateInternetGateway(igw ec2.InternetGateway) error {
 	if igw.Id == "" {
 		return fmt.Errorf("missing internet gateway id")
@@ -54,11 +52,11 @@ func (srv *Server) UpdateInternetGateway(igw ec2.InternetGateway) error {
 	defer srv.mu.Unlock()
 	_, found := srv.internetGateways[igw.Id]
 	if !found {
-		return fmt.Errorf("internet gateway %s not found", igw.Id)
+		return fmt.Errorf("internet gateway %q not found", igw.Id)
 	}
 	if igw.VPCId != "" {
 		if _, found := srv.vpcs[igw.VPCId]; !found {
-			return fmt.Errorf("vpc %s not found", igw.VPCId)
+			return fmt.Errorf("VPC %q not found", igw.VPCId)
 		}
 	}
 	srv.internetGateways[igw.Id] = &internetGateway{igw}
@@ -78,7 +76,7 @@ func (srv *Server) RemoveInternetGateway(igwId string) error {
 		delete(srv.internetGateways, igwId)
 		return nil
 	}
-	return fmt.Errorf("internet gateway %s not found", igwId)
+	return fmt.Errorf("internet gateway %q not found", igwId)
 }
 
 type internetGateway struct {
