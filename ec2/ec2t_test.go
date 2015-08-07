@@ -34,12 +34,9 @@ func (s *LocalServer) SetUp(c *C) {
 	c.Assert(srv, NotNil)
 	srv.SetCreateRootDisks(true)
 
-	// Add default attributes.
-	srv.SetInitialAttributes(map[string][]string{
-		"supported-platforms": []string{"VPC", "EC2"},
-		"default-vpc":         []string{"vpc-xxxxxxx"},
-	})
-
+	// Set up default VPC.
+	_, err = srv.AddDefaultVPCAndSubnets()
+	c.Assert(err, IsNil)
 	s.srv = srv
 	s.region = aws.Region{EC2Endpoint: srv.URL()}
 }

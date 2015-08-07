@@ -18,37 +18,28 @@ import (
 	"gopkg.in/amz.v3/ec2"
 )
 
-// SetInitialAttributes sets the given account attributes on the server.
-func (srv *Server) SetInitialAttributes(attrs map[string][]string) {
+// SetAccountAttributes sets the given account attributes on the
+// server. When the "default-vpc" attribute is specified, its value
+// must match an existing VPC in the test server, otherwise it's an
+// error. In addition, only the first value for "default-vpc", the
+// rest (if any) are ignored.
+func (srv *Server) SetAccountAttributes(attrs map[string][]string) error {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
 	for attrName, values := range attrs {
 		srv.attributes[attrName] = values
 		if attrName == "default-vpc" {
-			// The default-vpc attribute was provided, so create the
-			// respective VPCs and their subnets.
-			for _, vpcId := range values {
-				srv.vpcs[vpcId] = &vpc{ec2.VPC{
-					Id:              vpcId,
-					State:           "available",
-					CIDRBlock:       "10.0.0.0/16",
-					DHCPOptionsId:   fmt.Sprintf("dopt-%d", srv.dhcpOptsId.next()),
-					InstanceTenancy: "default",
-					IsDefault:       true,
-				}}
-				subnetId := fmt.Sprintf("subnet-%d", srv.subnetId.next())
-				cidrBlock := "10.10.0.0/20"
-				availIPs, _ := srv.calcSubnetAvailIPs(cidrBlock)
-				srv.subnets[subnetId] = &subnet{ec2.Subnet{
-					Id:               subnetId,
-					VPCId:            vpcId,
-					State:            "available",
-					CIDRBlock:        cidrBlock,
-					AvailZone:        "us-east-1b",
-					AvailableIPCount: availIPs,
-					DefaultForAZ:     true,
-				}}
+			if len(values) == 0 {
+				return fmt.Errorf("no value(s) for attribute default-vpc")
+			}
+			defaultVPCId := values[0] // ignore the rest.
+			if _, found := srv.vpcs[defaultVPCId]; !found {
+				return fmt.Errorf("VPC %q not found", defaultVPCId)
 			}
 		}
 	}
+	return nil
 }
 
 func (srv *Server) accountAttributes(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
