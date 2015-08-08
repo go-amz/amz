@@ -182,7 +182,11 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) ([]ec2.RunNetwor
 			}
 			iface.DeleteOnTermination = val
 		case "PrivateIpAddress":
-			privateIP := ec2.PrivateIP{Address: vals[0], IsPrimary: true}
+			privateIP := ec2.PrivateIP{
+				Address:   vals[0],
+				DNSName:   srv.dnsNameFromPrivateIP(vals[0]),
+				IsPrimary: true,
+			}
 			iface.PrivateIPs = append(iface.PrivateIPs, privateIP)
 			// When a single private IP address is explicitly specified,
 			// only one instance can be launched according to the API docs.
@@ -203,6 +207,7 @@ func (srv *Server) parseRunNetworkInterfaces(req *http.Request) ([]ec2.RunNetwor
 			switch subFieldName {
 			case "PrivateIpAddress":
 				privateIP.Address = vals[0]
+				privateIP.DNSName = srv.dnsNameFromPrivateIP(vals[0])
 			case "Primary":
 				val, err := strconv.ParseBool(vals[0])
 				if err != nil {
@@ -255,9 +260,11 @@ func (srv *Server) addDefaultNIC(instSubnet *subnet) []ec2.RunNetworkInterface {
 		DeviceIndex:         0,
 		Description:         "created by ec2test server",
 		DeleteOnTermination: true,
-		PrivateIPs: []ec2.PrivateIP{
-			{Address: ip.String(), IsPrimary: true},
-		},
+		PrivateIPs: []ec2.PrivateIP{{
+			Address:   ip.String(),
+			DNSName:   srv.dnsNameFromPrivateIP(ip.String()),
+			IsPrimary: true,
+		}},
 	}}
 }
 
@@ -286,11 +293,11 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 		// Find the primary private IP address for the NIC
 		// inside the PrivateIPs slice.
 		primaryIP := ""
-		privateDNSName := fmt.Sprintf("%s.internal.invalid", instId)
 		for i, ip := range ifaceToCreate.PrivateIPs {
 			if ip.IsPrimary {
 				primaryIP = ip.Address
-				ifaceToCreate.PrivateIPs[i].DNSName = privateDNSName
+				dnsName := srv.dnsNameFromPrivateIP(primaryIP)
+				ifaceToCreate.PrivateIPs[i].DNSName = dnsName
 				break
 			}
 		}
@@ -314,7 +321,7 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 			Status:           "in-use",
 			MACAddress:       macAddress,
 			PrivateIPAddress: primaryIP,
-			PrivateDNSName:   privateDNSName,
+			PrivateDNSName:   srv.dnsNameFromPrivateIP(primaryIP),
 			SourceDestCheck:  true,
 			Groups:           groups,
 			PrivateIPs:       ifaceToCreate.PrivateIPs,
@@ -331,7 +338,11 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 	ipMap := make(map[int]ec2.PrivateIP)
 	primaryIP := req.Form.Get("PrivateIpAddress")
 	if primaryIP != "" {
-		ipMap[0] = ec2.PrivateIP{Address: primaryIP, IsPrimary: true}
+		ipMap[0] = ec2.PrivateIP{
+			Address:   primaryIP,
+			DNSName:   srv.dnsNameFromPrivateIP(primaryIP),
+			IsPrimary: true,
+		}
 	}
 	desc := req.Form.Get("Description")
 
@@ -358,6 +369,7 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 			switch parts[2] {
 			case "PrivateIpAddress":
 				ip.Address = vals[0]
+				ip.DNSName = srv.dnsNameFromPrivateIP(ip.Address)
 			case "Primary":
 				val, err := strconv.ParseBool(vals[0])
 				if err != nil {
@@ -388,7 +400,7 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 		Status:           "available",
 		MACAddress:       fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId),
 		PrivateIPAddress: primaryIP,
-		PrivateDNSName:   fmt.Sprintf("internal-%s.invalid", strings.Replace(primaryIP, ".", "-", -1)),
+		PrivateDNSName:   srv.dnsNameFromPrivateIP(primaryIP),
 		SourceDestCheck:  true,
 		Groups:           groups,
 		PrivateIPs:       privateIPs,
@@ -402,6 +414,10 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 	resp.RequestId = reqId
 	resp.NetworkInterface = i.NetworkInterface
 	return resp
+}
+
+func (srv *Server) dnsNameFromPrivateIP(privateIP string) string {
+	return fmt.Sprintf("ip-%s.ec2.internal", strings.Replace(privateIP, ".", "-", -1))
 }
 
 func (srv *Server) deleteIFace(w http.ResponseWriter, req *http.Request, reqId string) interface{} {
