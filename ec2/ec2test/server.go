@@ -38,6 +38,7 @@ type Server struct {
 	zones                map[string]availabilityZone     // name -> availabilityZone
 	vpcs                 map[string]*vpc                 // id -> vpc
 	internetGateways     map[string]*internetGateway     // id -> igw
+	routeTables          map[string]*routeTable          // id -> table
 	subnets              map[string]*subnet              // id -> subnet
 	ifaces               map[string]*iface               // id -> iface
 	networkAttachments   map[string]*interfaceAttachment // id -> attachment
@@ -49,6 +50,8 @@ type Server struct {
 	groupId              counter
 	vpcId                counter
 	igwId                counter
+	rtbId                counter
+	rtbassocId           counter
 	dhcpOptsId           counter
 	subnetId             counter
 	volumeId             counter
@@ -92,6 +95,8 @@ func (srv *Server) Reset(withoutZonesOrGroups bool) {
 	srv.groupId = 0
 	srv.vpcId = 0
 	srv.igwId = 0
+	srv.rtbId = 0
+	srv.rtbassocId = 0
 	srv.dhcpOptsId = 0
 	srv.subnetId = 0
 	srv.volumeId = 0
@@ -104,6 +109,7 @@ func (srv *Server) Reset(withoutZonesOrGroups bool) {
 	srv.vpcs = make(map[string]*vpc)
 	srv.zones = make(map[string]availabilityZone)
 	srv.internetGateways = make(map[string]*internetGateway)
+	srv.routeTables = make(map[string]*routeTable)
 	srv.subnets = make(map[string]*subnet)
 	srv.ifaces = make(map[string]*iface)
 	srv.networkAttachments = make(map[string]*interfaceAttachment)

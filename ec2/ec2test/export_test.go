@@ -10,6 +10,7 @@ package ec2test
 
 var (
 	AddInternetGateway   = &addInternetGateway
+	AddRouteTable        = &addRouteTable
 	AddSubnet            = &addSubnet
 	SetAccountAttributes = &setAccountAttributes
 )

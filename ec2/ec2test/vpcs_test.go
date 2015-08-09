@@ -137,74 +137,80 @@ func (s *S) TestRemoveVPC(c *C) {
 }
 
 func (s *S) TestAddDefaultVPCAndSubnetsFailsWithoutZones(c *C) {
+	assertNothingExists := func() {
+		s.assertVPCsExist(c, false)
+		s.assertInternetGatewaysExist(c, false)
+		s.assertRouteTablesExist(c, false)
+		s.assertZonesExist(c, false)
+	}
 	// Reset the test server and ensure there are neither VPCs nor
 	// Zones set. Then start testing AddDefaultVPCAndSubnets().
 	s.srv.Reset(true)
-	s.assertVPCsExist(c, false)
-	s.assertZonesExist(c, false)
+	assertNothingExists()
 
 	// Ensure it fails when no zones are defined.
 	defaultVPC, err := s.srv.AddDefaultVPCAndSubnets()
 	c.Assert(err, ErrorMatches, "no AZs defined")
 	c.Assert(defaultVPC.Id, Equals, "")
-	s.assertVPCsExist(c, false)
+	assertNothingExists()
 }
 
 func (s *S) TestAddDefaultVPCAndSubnetsFailsWhenAddInternetGatewayFails(c *C) {
-	// Reset the test server and ensure there are no VPCs or IGWs but
-	// there are AZs defined.
-	s.srv.Reset(false)
-	s.assertVPCsExist(c, false)
-	s.assertInternetGatewaysExist(c, false)
-	s.assertZonesExist(c, true)
+	s.resetAllButZones(c)
 
 	restore := patchValue(
 		ec2test.AddInternetGateway,
 		func(*ec2test.Server, ec2.InternetGateway) (ec2.InternetGateway, error) {
-			return ec2.InternetGateway{}, fmt.Errorf("boom!")
+			return ec2.InternetGateway{}, fmt.Errorf("igw boom!")
 		})
 	defer restore()
 
 	// Ensure it fails when IGW cannot be added.
 	defaultVPC, err := s.srv.AddDefaultVPCAndSubnets()
-	c.Assert(err, ErrorMatches, "boom!")
+	c.Assert(err, ErrorMatches, "igw boom!")
 	c.Assert(defaultVPC.Id, Equals, "")
-	s.assertVPCsExist(c, false)
-	s.assertInternetGatewaysExist(c, false)
-	s.assertZonesExist(c, true)
+
+	s.assertOnlyZonesRemain(c)
+}
+
+func (s *S) TestAddDefaultVPCAndSubnetsFailsWhenAddRouteTableFails(c *C) {
+	s.resetAllButZones(c)
+
+	restore := patchValue(
+		ec2test.AddRouteTable,
+		func(*ec2test.Server, ec2.RouteTable) (ec2.RouteTable, error) {
+			return ec2.RouteTable{}, fmt.Errorf("rtb boom!")
+		})
+	defer restore()
+
+	// Ensure it fails when the main route table cannot be added.
+	defaultVPC, err := s.srv.AddDefaultVPCAndSubnets()
+	c.Assert(err, ErrorMatches, "rtb boom!")
+	c.Assert(defaultVPC.Id, Equals, "")
+
+	s.assertOnlyZonesRemain(c)
 }
 
 func (s *S) TestAddDefaultVPCAndSubnetsFailsWhenAddSubnetFails(c *C) {
-	// Reset the test server and ensure there are no VPCs or IGWs but
-	// there are AZs defined.
-	s.srv.Reset(false)
-	s.assertVPCsExist(c, false)
-	s.assertInternetGatewaysExist(c, false)
-	s.assertZonesExist(c, true)
+	s.resetAllButZones(c)
 
 	restore := patchValue(
 		ec2test.AddSubnet,
 		func(*ec2test.Server, ec2.Subnet) (ec2.Subnet, error) {
-			return ec2.Subnet{}, fmt.Errorf("boom!")
+			return ec2.Subnet{}, fmt.Errorf("subnet boom!")
 		})
 	defer restore()
 
 	// Ensure it fails when subnets cannot be added.
 	defaultVPC, err := s.srv.AddDefaultVPCAndSubnets()
-	c.Assert(err, ErrorMatches, "boom!")
+	c.Assert(err, ErrorMatches, "subnet boom!")
 	c.Assert(defaultVPC.Id, Equals, "")
-	s.assertVPCsExist(c, false)
-	s.assertInternetGatewaysExist(c, false)
-	s.assertZonesExist(c, true)
+
+	s.assertOnlyZonesRemain(c)
 }
 
 func (s *S) TestAddDefaultVPCAndSubnetsFailsWhenSetAccountAttributesFails(c *C) {
-	// Reset the test server and ensure there are no VPCs or IGWs but
-	// there are AZs defined.
-	s.srv.Reset(false)
-	s.assertVPCsExist(c, false)
-	s.assertInternetGatewaysExist(c, false)
-	s.assertZonesExist(c, true)
+	s.resetAllButZones(c)
 
 	restore := patchValue(
 		ec2test.SetAccountAttributes,
@@ -217,9 +223,8 @@ func (s *S) TestAddDefaultVPCAndSubnetsFailsWhenSetAccountAttributesFails(c *C) 
 	defaultVPC, err := s.srv.AddDefaultVPCAndSubnets()
 	c.Assert(err, ErrorMatches, "boom!")
 	c.Assert(defaultVPC.Id, Equals, "")
-	s.assertVPCsExist(c, false)
-	s.assertInternetGatewaysExist(c, false)
-	s.assertZonesExist(c, true)
+
+	s.assertOnlyZonesRemain(c)
 }
 
 // patchValue sets the value pointed to by the given destination to
@@ -272,4 +277,21 @@ func (s *S) assertZonesExist(c *C, mustExist bool) {
 	} else {
 		c.Assert(resp.Zones, Not(HasLen), 0)
 	}
+}
+
+func (s *S) resetAllButZones(c *C) {
+	// Reset the test server and ensure there are no VPCs, IGWs,
+	// subnets, or route tables but there are AZs defined.
+	s.srv.Reset(false)
+	s.assertVPCsExist(c, false)
+	s.assertInternetGatewaysExist(c, false)
+	s.assertRouteTablesExist(c, false)
+	s.assertZonesExist(c, true)
+}
+
+func (s *S) assertOnlyZonesRemain(c *C) {
+	s.assertVPCsExist(c, false)
+	s.assertInternetGatewaysExist(c, false)
+	s.assertRouteTablesExist(c, false)
+	s.assertZonesExist(c, true)
 }

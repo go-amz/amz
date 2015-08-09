@@ -72,6 +72,7 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"ModifyInstanceAttribute":       (*Server).modifyInstanceAttribute,
 	"CreateTags":                    (*Server).createTags,
 	"DescribeInternetGateways":      (*Server).describeInternetGateways,
+	"DescribeRouteTables":           (*Server).describeRouteTables,
 }
 
 // newAction allocates a new action and adds it to the

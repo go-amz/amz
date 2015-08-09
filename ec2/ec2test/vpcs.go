@@ -84,6 +84,7 @@ func (srv *Server) RemoveVPC(vpcId string) error {
 var (
 	addInternetGateway   = (*Server).AddInternetGateway
 	addSubnet            = (*Server).AddSubnet
+	addRouteTable        = (*Server).AddRouteTable
 	setAccountAttributes = (*Server).SetAccountAttributes
 )
 
@@ -105,11 +106,15 @@ var (
 func (srv *Server) AddDefaultVPCAndSubnets() (defaultVPC ec2.VPC, err error) {
 	zeroVPC := ec2.VPC{}
 	var igw ec2.InternetGateway
+	var rtbMain ec2.RouteTable
 
 	defer func() {
 		// Cleanup all partially added items on error.
 		if err != nil && defaultVPC.Id != "" {
 			srv.RemoveVPC(defaultVPC.Id)
+			if rtbMain.Id != "" {
+				srv.RemoveRouteTable(rtbMain.Id)
+			}
 			if igw.Id != "" {
 				srv.RemoveInternetGateway(igw.Id)
 			}
@@ -128,7 +133,7 @@ func (srv *Server) AddDefaultVPCAndSubnets() (defaultVPC ec2.VPC, err error) {
 		InstanceTenancy: "default",
 		IsDefault:       true,
 	})
-	zeroVPC.Id = defaultVPC.Id
+	zeroVPC.Id = defaultVPC.Id // zeroed again in the deferred
 	igw, err = addInternetGateway(srv, ec2.InternetGateway{
 		VPCId:           defaultVPC.Id,
 		AttachmentState: "available",
@@ -136,7 +141,24 @@ func (srv *Server) AddDefaultVPCAndSubnets() (defaultVPC ec2.VPC, err error) {
 	if err != nil {
 		return zeroVPC, err
 	}
-	//TODO:AddRouteTable
+	rtbMain, err = addRouteTable(srv, ec2.RouteTable{
+		VPCId: defaultVPC.Id,
+		Associations: []ec2.RouteTableAssociation{{
+			IsMain: true,
+		}},
+		Routes: []ec2.Route{{
+			DestinationCIDRBlock: defaultVPC.CIDRBlock, // default VPC internal traffic
+			GatewayId:            "local",
+			State:                "active",
+		}, {
+			DestinationCIDRBlock: "0.0.0.0/0", // default VPC default egress route.
+			GatewayId:            igw.Id,
+			State:                "active",
+		}},
+	})
+	if err != nil {
+		return zeroVPC, err
+	}
 	subnetIndex := 0
 	for zone, _ := range srv.zones {
 		cidrBlock := fmt.Sprintf("10.10.%d.0/24", subnetIndex)
