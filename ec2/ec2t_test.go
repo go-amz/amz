@@ -34,12 +34,9 @@ func (s *LocalServer) SetUp(c *C) {
 	c.Assert(srv, NotNil)
 	srv.SetCreateRootDisks(true)
 
-	// Add default attributes.
-	srv.SetInitialAttributes(map[string][]string{
-		"supported-platforms": []string{"VPC", "EC2"},
-		"default-vpc":         []string{"vpc-xxxxxxx"},
-	})
-
+	// Set up default VPC.
+	_, err = srv.AddDefaultVPCAndSubnets()
+	c.Assert(err, IsNil)
 	s.srv = srv
 	s.region = aws.Region{EC2Endpoint: srv.URL()}
 }
@@ -208,18 +205,18 @@ func (s *LocalServerSuite) TestAvailabilityZones(c *C) {
 	resp, err := s.ec2.AvailabilityZones(nil)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Zones, HasLen, 4)
-	c.Assert(resp.Zones[0].Name, Equals, "us-east-1a")
-	c.Assert(resp.Zones[1].Name, Equals, "us-east-1b")
-	c.Assert(resp.Zones[2].Name, Equals, "us-west-1a")
-	c.Assert(resp.Zones[3].Name, Equals, "us-west-1b")
+	for _, zone := range resp.Zones {
+		c.Check(zone.Name, Matches, "^us-(east|west)-1[ab]$")
+	}
 
 	filter := ec2.NewFilter()
 	filter.Add("region-name", "us-east-1")
 	resp, err = s.ec2.AvailabilityZones(filter)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Zones, HasLen, 2)
-	c.Assert(resp.Zones[0].Name, Equals, "us-east-1a")
-	c.Assert(resp.Zones[1].Name, Equals, "us-east-1b")
+	for _, zone := range resp.Zones {
+		c.Check(zone.Name, Matches, "^us-east-1[ab]$")
+	}
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
@@ -276,22 +273,39 @@ func (s *ServerTests) TestDescribeAccountAttributes(c *C) {
 	}
 }
 
-func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
+func (s *ServerTests) getDefaultVPCSubnetSuitableForT1Micro(c *C) (defaultVPCId string, defaultSubnet ec2.Subnet) {
 	defaultVPCId, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
-	subnet := defaultSubnets[0]
+	// We need to pick a subnet in AZ where t1-micro is still
+	// supported, which means (as of 2015-08-07) us-east-1d,
+	// us-east-1c, or us-east-1a, but *not* us-east-1e.
+	var subnet ec2.Subnet
+	for _, sub := range defaultSubnets {
+		if sub.AvailZone != "us-east-1e" {
+			subnet = sub
+			break
+		}
+	}
+	if subnet.Id == "" {
+		// No luck, better report it and give up.
+		c.Fatalf("cannot find a default VPC subnet not in AZ us-east-1e")
+	}
+	return defaultVPCId, subnet
+}
 
+func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
+	defaultVPCId, defaultSubnet := s.getDefaultVPCSubnetSuitableForT1Micro(c)
 	g0 := s.makeTestGroup(c, defaultVPCId, "goamz-test0", "ec2test group 0")
 	g1 := s.makeTestGroup(c, defaultVPCId, "goamz-test1", "ec2test group 1")
 	defer s.deleteGroups(c, []ec2.SecurityGroup{g0, g1})
 
-	ip1 := validIPForSubnet(c, subnet, 5)
-	ip2 := validIPForSubnet(c, subnet, 6)
+	ip1 := validIPForSubnet(c, defaultSubnet, 5)
+	ip2 := validIPForSubnet(c, defaultSubnet, 6)
 	list, err := s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:      imageId,
 		InstanceType: "t1.micro",
 		NetworkInterfaces: []ec2.RunNetworkInterface{{
 			DeviceIndex:         0,
-			SubnetId:            subnet.Id,
+			SubnetId:            defaultSubnet.Id,
 			Description:         "first nic",
 			SecurityGroupIds:    []string{g0.Id, g1.Id},
 			DeleteOnTermination: true,
@@ -308,13 +322,13 @@ func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
 	id := inst.InstanceId
 	defer terminateInstances(c, s.ec2, []string{id})
 
-	c.Check(inst.VPCId, Equals, subnet.VPCId)
-	c.Check(inst.SubnetId, Equals, subnet.Id)
+	c.Check(inst.VPCId, Equals, defaultSubnet.VPCId)
+	c.Check(inst.SubnetId, Equals, defaultSubnet.Id)
 	iface := inst.NetworkInterfaces[0]
 	c.Check(iface.Id, Matches, "eni-.+")
 	c.Check(iface.Attachment.DeviceIndex, Equals, 0)
 	c.Check(iface.Attachment.Id, Matches, "eni-attach-.+")
-	c.Check(iface.SubnetId, Equals, subnet.Id)
+	c.Check(iface.SubnetId, Equals, defaultSubnet.Id)
 	c.Check(iface.PrivateIPAddress, Equals, ip1)
 	c.Check(iface.Description, Equals, "first nic")
 	c.Check(iface.Groups, HasLen, 2)
@@ -335,16 +349,15 @@ func (s *ServerTests) TestRunInstancesVPCCreatesNICsWhenSpecified(c *C) {
 }
 
 func (s *ServerTests) TestRunInstancesVPCReturnsErrorWithBothInstanceAndNICSubnetIds(c *C) {
-	_, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
-	subnet := defaultSubnets[0]
+	_, defaultSubnet := s.getDefaultVPCSubnetSuitableForT1Micro(c)
 
 	_, err := s.ec2.RunInstances(&ec2.RunInstances{
 		ImageId:      imageId,
 		InstanceType: "t1.micro",
-		SubnetId:     subnet.Id,
+		SubnetId:     defaultSubnet.Id,
 		NetworkInterfaces: []ec2.RunNetworkInterface{{
 			DeviceIndex:         0,
-			SubnetId:            subnet.Id,
+			SubnetId:            defaultSubnet.Id,
 			Description:         "first nic",
 			DeleteOnTermination: true,
 		}},
@@ -354,7 +367,7 @@ func (s *ServerTests) TestRunInstancesVPCReturnsErrorWithBothInstanceAndNICSubne
 }
 
 func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
-	defaultVPCId, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
+	defaultVPCId, defaultSubnet := s.getDefaultVPCSubnetSuitableForT1Micro(c)
 
 	params := &ec2.RunInstances{
 		ImageId:      imageId,
@@ -363,8 +376,8 @@ func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
 	if subnet != nil {
 		params.SubnetId = subnet.Id
 	} else {
-		subnet = &defaultSubnets[0]
-		params.AvailZone = defaultAvailZone
+		subnet = &defaultSubnet
+		params.AvailZone = defaultSubnet.AvailZone
 	}
 	list, err := s.ec2.RunInstances(params)
 	c.Assert(err, IsNil)
@@ -380,7 +393,9 @@ func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
 	if inst.SubnetId != subnet.Id {
 		// Since we don't specify which AZ to use,
 		// the instance might launch in any one.
-		for _, sub := range defaultSubnets {
+		defaultSubnetsResp, err := s.ec2.Subnets([]string{inst.SubnetId}, nil)
+		c.Assert(err, IsNil)
+		for _, sub := range defaultSubnetsResp.Subnets {
 			if inst.SubnetId == sub.Id {
 				subnet = &sub
 				break
@@ -414,13 +429,13 @@ func (s *ServerTests) TestRunInstancesVPCCreatesDefaultNICWithoutSubnetIdOrNICs(
 }
 
 func (s *ServerTests) TestRunInstancesVPCCreatesDefaultNICWithSubnetIdNoNICs(c *C) {
-	_, defaultSubnets := s.getDefaultVPCIdAndSubnets(c)
-	s.testCreateDefaultNIC(c, &defaultSubnets[0])
+	_, defaultSubnet := s.getDefaultVPCSubnetSuitableForT1Micro(c)
+	s.testCreateDefaultNIC(c, &defaultSubnet)
 }
 
 func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	_, err := e.TerminateInstances(ids)
-	if err != nil && c.Check(err, ErrorMatches, "InvalidInstanceID.NotFound") {
+	if err != nil && c.Check(errorCode(err), Equals, "InvalidInstanceID.NotFound") {
 		// Nothing to do.
 		return
 	} else {
@@ -442,7 +457,10 @@ func terminateInstances(c *C, e *ec2.EC2, ids []string) {
 	for a := testAttempt.Start(); a.Next(); {
 		c.Logf("waiting for %v to get terminated", ids)
 		resp, err := e.Instances(ids, f)
-		if err != nil {
+		if err != nil && errorCode(err) == "InvalidInstanceID.NotFound" {
+			c.Logf("all instances terminated.")
+			return
+		} else if err != nil {
 			c.Fatalf("not waiting for %v to terminate: %v", ids, err)
 		}
 		for _, r := range resp.Reservations {

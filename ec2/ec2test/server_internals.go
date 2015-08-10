@@ -71,6 +71,8 @@ var actions = map[string]func(*Server, http.ResponseWriter, *http.Request, strin
 	"DetachVolume":                  (*Server).detachVolume,
 	"ModifyInstanceAttribute":       (*Server).modifyInstanceAttribute,
 	"CreateTags":                    (*Server).createTags,
+	"DescribeInternetGateways":      (*Server).describeInternetGateways,
+	"DescribeRouteTables":           (*Server).describeRouteTables,
 }
 
 // newAction allocates a new action and adds it to the
@@ -119,6 +121,43 @@ func (srv *Server) serveHTTP(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("Content-Type", `xml version="1.0" encoding="UTF-8"`)
 	xmlMarshal(w, response)
+}
+
+func (srv *Server) addDefaultZonesAndGroups() {
+	// Add default security group.
+	g := &securityGroup{
+		name:        "default",
+		description: "default group",
+		id:          fmt.Sprintf("sg-%d", srv.groupId.next()),
+	}
+	g.perms = map[permKey]bool{
+		permKey{
+			protocol: "icmp",
+			fromPort: -1,
+			toPort:   -1,
+			group:    g,
+		}: true,
+		permKey{
+			protocol: "tcp",
+			fromPort: 0,
+			toPort:   65535,
+			group:    g,
+		}: true,
+		permKey{
+			protocol: "udp",
+			fromPort: 0,
+			toPort:   65535,
+			group:    g,
+		}: true,
+	}
+	srv.groups[g.id] = g
+
+	// Add a default availability zone.
+	var z availabilityZone
+	z.Name = defaultAvailZone
+	z.Region = "us-east-1"
+	z.State = "available"
+	srv.zones[z.Name] = z
 }
 
 func (srv *Server) notImplemented(w http.ResponseWriter, req *http.Request, reqId string) interface{} {

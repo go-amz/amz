@@ -31,12 +31,14 @@ type Server struct {
 	reqs            []*Action
 	createRootDisks bool
 
-	attributes           map[string][]string       // attr name -> values
-	instances            map[string]*Instance      // id -> instance
-	reservations         map[string]*reservation   // id -> reservation
-	groups               map[string]*securityGroup // id -> group
-	zones                []availabilityZone
+	attributes           map[string][]string             // attr name -> values
+	instances            map[string]*Instance            // id -> instance
+	reservations         map[string]*reservation         // id -> reservation
+	groups               map[string]*securityGroup       // id -> group
+	zones                map[string]availabilityZone     // name -> availabilityZone
 	vpcs                 map[string]*vpc                 // id -> vpc
+	internetGateways     map[string]*internetGateway     // id -> igw
+	routeTables          map[string]*routeTable          // id -> table
 	subnets              map[string]*subnet              // id -> subnet
 	ifaces               map[string]*iface               // id -> iface
 	networkAttachments   map[string]*interfaceAttachment // id -> attachment
@@ -47,6 +49,9 @@ type Server struct {
 	reservationId        counter
 	groupId              counter
 	vpcId                counter
+	igwId                counter
+	rtbId                counter
+	rtbassocId           counter
 	dhcpOptsId           counter
 	subnetId             counter
 	volumeId             counter
@@ -57,54 +62,8 @@ type Server struct {
 
 // NewServer returns a new server.
 func NewServer() (*Server, error) {
-	srv := &Server{
-		attributes:           make(map[string][]string),
-		instances:            make(map[string]*Instance),
-		groups:               make(map[string]*securityGroup),
-		vpcs:                 make(map[string]*vpc),
-		subnets:              make(map[string]*subnet),
-		ifaces:               make(map[string]*iface),
-		networkAttachments:   make(map[string]*interfaceAttachment),
-		volumes:              make(map[string]*volume),
-		volumeAttachments:    make(map[string]*volumeAttachment),
-		reservations:         make(map[string]*reservation),
-		initialInstanceState: Pending,
-	}
-
-	// Add default security group.
-	g := &securityGroup{
-		name:        "default",
-		description: "default group",
-		id:          fmt.Sprintf("sg-%d", srv.groupId.next()),
-	}
-	g.perms = map[permKey]bool{
-		permKey{
-			protocol: "icmp",
-			fromPort: -1,
-			toPort:   -1,
-			group:    g,
-		}: true,
-		permKey{
-			protocol: "tcp",
-			fromPort: 0,
-			toPort:   65535,
-			group:    g,
-		}: true,
-		permKey{
-			protocol: "udp",
-			fromPort: 0,
-			toPort:   65535,
-			group:    g,
-		}: true,
-	}
-	srv.groups[g.id] = g
-
-	// Add a default availability zone.
-	var z availabilityZone
-	z.Name = defaultAvailZone
-	z.Region = "us-east-1"
-	z.State = "available"
-	srv.zones = []availabilityZone{z}
+	srv := &Server{}
+	srv.Reset(false)
 
 	l, err := net.Listen("tcp", "localhost:0")
 	if err != nil {
@@ -120,6 +79,48 @@ func NewServer() (*Server, error) {
 		srv.serveHTTP(w, req)
 	}))
 	return srv, nil
+}
+
+// Reset is a convenient helper to remove all test entities (e.g.
+// VPCs, subnets, instances) from the test server and reset all id
+// counters. The, if withoutZonesOrGroups is false, a default AZ and
+// security group will be created.
+func (srv *Server) Reset(withoutZonesOrGroups bool) {
+	srv.mu.Lock()
+	defer srv.mu.Unlock()
+
+	srv.maxId = 0
+	srv.reqId = 0
+	srv.reservationId = 0
+	srv.groupId = 0
+	srv.vpcId = 0
+	srv.igwId = 0
+	srv.rtbId = 0
+	srv.rtbassocId = 0
+	srv.dhcpOptsId = 0
+	srv.subnetId = 0
+	srv.volumeId = 0
+	srv.ifaceId = 0
+	srv.attachId = 0
+
+	srv.attributes = make(map[string][]string)
+	srv.instances = make(map[string]*Instance)
+	srv.groups = make(map[string]*securityGroup)
+	srv.vpcs = make(map[string]*vpc)
+	srv.zones = make(map[string]availabilityZone)
+	srv.internetGateways = make(map[string]*internetGateway)
+	srv.routeTables = make(map[string]*routeTable)
+	srv.subnets = make(map[string]*subnet)
+	srv.ifaces = make(map[string]*iface)
+	srv.networkAttachments = make(map[string]*interfaceAttachment)
+	srv.volumes = make(map[string]*volume)
+	srv.volumeAttachments = make(map[string]*volumeAttachment)
+	srv.reservations = make(map[string]*reservation)
+
+	srv.reqs = []*Action{}
+	if !withoutZonesOrGroups {
+		srv.addDefaultZonesAndGroups()
+	}
 }
 
 // Quit closes down the server.

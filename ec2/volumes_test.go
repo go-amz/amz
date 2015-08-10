@@ -140,7 +140,7 @@ func (s *S) TestDetachVolumeExample(c *C) {
 
 func (s *ServerTests) TestVolumes(c *C) {
 	vol1 := ec2.CreateVolume{
-		AvailZone:  "us-east-1b",
+		AvailZone:  "us-east-1a",
 		VolumeType: "standard",
 		VolumeSize: 20,
 	}
@@ -154,7 +154,7 @@ func (s *ServerTests) TestVolumes(c *C) {
 	id1 := resp1.Volume.Id
 
 	vol2 := ec2.CreateVolume{
-		AvailZone:  "us-east-1b",
+		AvailZone:  "us-east-1a",
 		VolumeType: "io1",
 		VolumeSize: 101,
 		IOPS:       3030,
@@ -226,7 +226,7 @@ func (s *ServerTests) TestVolumes(c *C) {
 func (s *ServerTests) TestVolumesTagFilter(c *C) {
 	createVolume := func() string {
 		resp, err := s.ec2.CreateVolume(ec2.CreateVolume{
-			AvailZone:  "us-east-1b",
+			AvailZone:  "us-east-1a",
 			VolumeType: "standard",
 			VolumeSize: 1,
 		})

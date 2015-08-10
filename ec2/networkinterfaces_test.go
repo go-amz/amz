@@ -9,6 +9,7 @@
 package ec2_test
 
 import (
+	"strings"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -227,9 +228,13 @@ func (s *ServerTests) TestNetworkInterfacesFiltering(c *C) {
 		return resultIds
 	}
 	filterCheck := func(name, val string, resultIds []string) filterTest {
+		vals := []string{val}
+		if strings.ContainsAny(val, "|") {
+			vals = strings.Split(val, "|")
+		}
 		return filterTest{
 			about:      "filter check " + name + " = " + val,
-			filters:    []filterSpec{{name, []string{val}}},
+			filters:    []filterSpec{{name, vals}},
 			resultIds:  resultIds,
 			allowExtra: true,
 		}
@@ -286,7 +291,7 @@ func (s *ServerTests) TestNetworkInterfacesFiltering(c *C) {
 		filterCheck("attachment.instance-id", prep.instId, nicIds(2)),
 		filterCheck("attachment.instance-owner-id", prep.ownerId, nicIds(2)),
 		filterCheck("attachment.device-index", "1", nicIds(2)),
-		filterCheck("attachment.status", "attached", nicIds(2)),
+		filterCheck("attachment.status", "attached|attaching", nicIds(2)),
 		filterCheck("attachment.delete-on-termination", "false", nicIds(2)),
 		filterCheck("attachment.attach-time", prep.nic2AttachTime, nicIds(2)),
 		filterCheck("source-dest-check", "true", nicIds(1, 2)),
@@ -299,9 +304,8 @@ func (s *ServerTests) TestNetworkInterfacesFiltering(c *C) {
 	}
 	for i, t := range tests {
 		c.Logf("%d. %s", i, t.about)
-		var f *ec2.Filter
+		f := ec2.NewFilter()
 		if t.filters != nil {
-			f = ec2.NewFilter()
 			for _, spec := range t.filters {
 				f.Add(spec.name, spec.values...)
 			}
@@ -316,22 +320,30 @@ func (s *ServerTests) TestNetworkInterfacesFiltering(c *C) {
 		if !c.Check(err, IsNil) {
 			continue
 		}
-		nics := make(map[string]*ec2.NetworkInterface)
-		for j := range resp.Interfaces {
-			nic := &resp.Interfaces[j]
-			c.Check(nics[nic.Id], IsNil, Commentf("duplicate NIC id: %q", nic.Id))
+		nics := make(map[string]ec2.NetworkInterface)
+		for _, nic := range resp.Interfaces {
+			_, found := nics[nic.Id]
+			c.Check(found, Equals, false, Commentf("duplicate NIC id: %q", nic.Id))
 			nics[nic.Id] = nic
 		}
-		// If extra NICs may be returned, eliminate all NICs that we
+		// Extra NICs may be returned, so eliminate all NICs that we
 		// did not create in this session.
 		if t.allowExtra {
-			for id, _ := range nics {
-				if id != prep.nicId1 && id != prep.nicId2 {
-					delete(nics, id)
+			// Don't range over a map while deleting from it!
+			noExtraNICs := make(map[string]ec2.NetworkInterface)
+			for id, nic := range nics {
+				if id == prep.nicId1 || id == prep.nicId2 {
+					noExtraNICs[id] = nic
+				} else {
+					c.Logf("filtering extra NIC %v", nic)
 				}
 			}
+			nics = noExtraNICs
 		}
-		c.Check(nics, HasLen, len(t.resultIds))
+		c.Check(
+			nics, HasLen, len(t.resultIds),
+			Commentf("expected %d NICs, got %d", len(t.resultIds), len(nics)),
+		)
 		for j, nicId := range t.resultIds {
 			nic := nics[nicId]
 			if c.Check(nic, NotNil, Commentf("NIC %d (%v) not found; got %#v", j, nicId, nics)) {
@@ -389,7 +401,11 @@ func (s *ServerTests) prepareNetworkInterfaces(c *C) (results prepareNICsResults
 	c.Assert(inst, NotNil)
 	results.instId = inst.InstanceId
 
-	results.ips1 = []ec2.PrivateIP{{Address: "10.3.1.10", IsPrimary: true}}
+	results.ips1 = []ec2.PrivateIP{{
+		Address:   "10.3.1.10",
+		DNSName:   "ip-10-3-1-10.ec2.internal",
+		IsPrimary: true,
+	}}
 	resp1, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{
 		SubnetId:    results.subId,
 		PrivateIPs:  results.ips1,
@@ -405,10 +421,15 @@ func (s *ServerTests) prepareNetworkInterfaces(c *C) (results prepareNICsResults
 	results.availZone = resp1.NetworkInterface.AvailZone
 	results.ownerId = resp1.NetworkInterface.OwnerId
 
-	results.ips2 = []ec2.PrivateIP{
-		{Address: "10.3.1.20", IsPrimary: true},
-		{Address: "10.3.1.22", IsPrimary: false},
-	}
+	results.ips2 = []ec2.PrivateIP{{
+		Address:   "10.3.1.20",
+		DNSName:   "ip-10-3-1-20.ec2.internal",
+		IsPrimary: true,
+	}, {
+		Address:   "10.3.1.22",
+		DNSName:   "ip-10-3-1-22.ec2.internal",
+		IsPrimary: false,
+	}}
 	resp2, err := s.ec2.CreateNetworkInterface(ec2.CreateNetworkInterface{
 		SubnetId:         results.subId,
 		PrivateIPs:       results.ips2,
@@ -457,15 +478,15 @@ func (s *ServerTests) prepareNetworkInterfaces(c *C) (results prepareNICsResults
 			}
 		}
 		if done {
-			c.Logf("all NICs were created")
+			c.Logf("all NICs were created and attached")
 			break
 		}
 	}
 	if !done {
 		// Attachment failed, but we still need to clean up.
 		results.cleanup = func() {
-			s.deleteInterfaces(c, []string{results.nicId1, results.nicId2})
 			terminateInstances(c, s.ec2, []string{results.instId})
+			s.deleteInterfaces(c, []string{results.nicId1, results.nicId2})
 			s.deleteGroups(c, []ec2.SecurityGroup{results.group})
 			s.deleteSubnets(c, []string{results.subId})
 			s.deleteVPCs(c, []string{results.vpcId})
@@ -516,13 +537,22 @@ func (s *ServerTests) prepareNetworkInterfaces(c *C) (results prepareNICsResults
 	results.nic2AttachTime = att.AttachTime
 
 	results.cleanup = func() {
+		terminateInstances(c, s.ec2, []string{results.instId})
+
 		// We won't be able to delete the interface until it is attached,
 		// so detach it first.
-		_, err := s.ec2.DetachNetworkInterface(results.attId, true)
-		c.Check(err, IsNil)
+		c.Logf("detaching NIC %q from instance %q...", results.nicId2, results.instId)
+		for a := testAttempt.Start(); a.Next(); {
+			_, err := s.ec2.DetachNetworkInterface(results.attId, true)
+			if err != nil {
+				c.Logf("DetachNetworkInterface returned: %v; retrying...", err)
+				continue
+			}
+			c.Logf("DetachNetworkInterface succeeded")
+			break
+		}
 
 		s.deleteInterfaces(c, []string{results.nicId1, results.nicId2})
-		terminateInstances(c, s.ec2, []string{results.instId})
 		s.deleteGroups(c, []ec2.SecurityGroup{results.group})
 		s.deleteSubnets(c, []string{results.subId})
 		s.deleteVPCs(c, []string{results.vpcId})
@@ -575,6 +605,25 @@ func assertNetworkInterface(c *C, obtained ec2.NetworkInterface, expectId, expec
 	}
 	c.Check(obtained.Attachment, DeepEquals, ec2.NetworkInterfaceAttachment{})
 	if len(expectIPs) > 0 {
+		c.Check(obtained.PrivateIPs, HasLen, len(expectIPs))
+		// AWS does not always set DNSName right after NIC creation,
+		// so we only check the obtained DNSName only if not empty.
+		for i, _ := range expectIPs {
+			if obtained.PrivateIPs[i].DNSName == "" {
+				// AWS didn't report it yet, so we also set the
+				// expected DNSName for this IP to empty to ensure the
+				// DeepEquals check below has a chance to pass.
+				c.Logf("obtained.PrivateIPs[%d].DNSName is empty", i)
+				expectIPs[i].DNSName = ""
+			} else if expectIPs[i].DNSName == "" {
+				// Allow DeepEquals to succeed below: since DNSName is
+				// not expected on this IP, set it to whatever we
+				// obtained.
+				dnsName := obtained.PrivateIPs[i].DNSName
+				c.Logf("obtained.PrivateIPs[%d].DNSName is %q", i, dnsName)
+				expectIPs[i].DNSName = dnsName
+			}
+		}
 		c.Check(obtained.PrivateIPs, DeepEquals, expectIPs)
 		c.Check(obtained.PrivateIPAddress, DeepEquals, expectIPs[0].Address)
 	}
