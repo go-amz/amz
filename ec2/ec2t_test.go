@@ -205,18 +205,18 @@ func (s *LocalServerSuite) TestAvailabilityZones(c *C) {
 	resp, err := s.ec2.AvailabilityZones(nil)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Zones, HasLen, 4)
-	c.Assert(resp.Zones[0].Name, Equals, "us-east-1a")
-	c.Assert(resp.Zones[1].Name, Equals, "us-east-1b")
-	c.Assert(resp.Zones[2].Name, Equals, "us-west-1a")
-	c.Assert(resp.Zones[3].Name, Equals, "us-west-1b")
+	for _, zone := range resp.Zones {
+		c.Check(zone.Name, Matches, "^us-(east|west)-1[ab]$")
+	}
 
 	filter := ec2.NewFilter()
 	filter.Add("region-name", "us-east-1")
 	resp, err = s.ec2.AvailabilityZones(filter)
 	c.Assert(err, IsNil)
 	c.Assert(resp.Zones, HasLen, 2)
-	c.Assert(resp.Zones[0].Name, Equals, "us-east-1a")
-	c.Assert(resp.Zones[1].Name, Equals, "us-east-1b")
+	for _, zone := range resp.Zones {
+		c.Check(zone.Name, Matches, "^us-east-1[ab]$")
+	}
 }
 
 // AmazonServerSuite runs the ec2test server tests against a live EC2 server.
