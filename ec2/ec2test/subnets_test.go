@@ -15,10 +15,12 @@ import (
 )
 
 func (s *S) TestAddSubnet(c *C) {
+	// AddDefaultVPCAndSubnets() called by SetUpTest() adds a default
+	// VPC.
+	s.assertVPCsExist(c, true)
 	subnet, err := s.srv.AddSubnet(ec2.Subnet{})
 	c.Assert(err, ErrorMatches, "empty VPCId field")
 	c.Assert(subnet, DeepEquals, ec2.Subnet{})
-	s.assertVPCsExist(c, true)
 
 	subnet, err = s.srv.AddSubnet(ec2.Subnet{VPCId: "ignored"})
 	c.Assert(err, ErrorMatches, "empty AvailZone field")

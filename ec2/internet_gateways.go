@@ -42,7 +42,7 @@ type InternetGatewaysResp struct {
 
 // InternetGateways describes one or more Internet Gateways (IGWs).
 // Both parameters are optional, and if specified will limit the
-// returned IGWs to the matching ids or filterring rules.
+// returned IGWs to the matching ids or filtering rules.
 //
 // See http://goo.gl/syjv2p for more details.
 func (ec2 *EC2) InternetGateways(ids []string, filter *Filter) (resp *InternetGatewaysResp, err error) {

@@ -62,7 +62,8 @@ func (s *S) TestAddInternetGateway(c *C) {
 }
 
 func (s *S) TestUpdateInternetGateway(c *C) {
-	// AddDefaultVPCAndSubnets() creates a IGW as well.
+	// AddDefaultVPCAndSubnets() called in SetUpTest() creates an IGW
+	// as well.
 	s.assertInternetGatewaysExist(c, true)
 
 	err := s.srv.UpdateInternetGateway(ec2.InternetGateway{})

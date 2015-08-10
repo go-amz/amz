@@ -18,6 +18,13 @@ import (
 	"gopkg.in/amz.v3/ec2"
 )
 
+// SetInitialAttributes is deprecated and it's just an alias for
+// SetAccountAttributes(). It's kept for now to prevent changing the
+// ec2test public interface and should be removed in the next release.
+func (srv *Server) SetInitialAttributes(attrs map[string][]string) error {
+	return srv.SetAccountAttributes(attrs)
+}
+
 // SetAccountAttributes sets the given account attributes on the
 // server. When the "default-vpc" attribute is specified, its value
 // must match an existing VPC in the test server, otherwise it's an

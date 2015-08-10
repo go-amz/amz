@@ -36,7 +36,7 @@ func (s *S) TestInternetGatewaysExample(c *C) {
 	c.Check(igw.Tags, HasLen, 0)
 }
 
-// Internet Gateway tests that run either agsints the local test
+// Internet Gateway tests that run either against the local test
 // server or live EC2 servers.
 
 func (s *ServerTests) TestDefaultVPCInternetGateway(c *C) {

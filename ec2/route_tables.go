@@ -100,7 +100,7 @@ type RouteTablesResp struct {
 
 // RouteTables describes one or more route tables.
 // Both parameters are optional, and if specified will limit the
-// returned tables to the matching ids or filterring rules.
+// returned tables to the matching ids or filtering rules.
 //
 // See http://goo.gl/1JZIfO for more details.
 func (ec2 *EC2) RouteTables(ids []string, filter *Filter) (resp *RouteTablesResp, err error) {

@@ -68,7 +68,7 @@ func (s *S) TestRouteTablesExample(c *C) {
 	c.Check(table.Tags, HasLen, 0)
 }
 
-// Route Table tests that run either agsints the local test
+// Route Table tests that run either against the local test
 // server or live EC2 servers.
 
 func (s *ServerTests) TestDefaultVPCRouteTables(c *C) {

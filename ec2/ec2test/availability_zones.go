@@ -29,8 +29,12 @@ func (srv *Server) SetAvailabilityZones(zones []ec2.AvailabilityZoneInfo) {
 	oldZones := srv.zones
 	srv.zones = make(map[string]availabilityZone)
 	for _, z := range zones {
-		if _, exists := oldZones[z.Name]; exists {
-			// Remove any subnets attached to this zone before
+		srv.zones[z.Name] = availabilityZone{z}
+
+		_, isNew := srv.zones[z.Name]
+		_, isOld := oldZones[z.Name]
+		if isOld && !isNew {
+			// Remove any subnets attached to this zone as we're
 			// removing it.
 			remainingSubnets := make(map[string]*subnet)
 			for _, sub := range srv.subnets {
@@ -40,7 +44,6 @@ func (srv *Server) SetAvailabilityZones(zones []ec2.AvailabilityZoneInfo) {
 			}
 			srv.subnets = remainingSubnets
 		}
-		srv.zones[z.Name] = availabilityZone{z}
 	}
 }
 
