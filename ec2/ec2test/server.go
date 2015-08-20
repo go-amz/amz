@@ -89,19 +89,19 @@ func (srv *Server) Reset(withoutZonesOrGroups bool) {
 	srv.mu.Lock()
 	defer srv.mu.Unlock()
 
-	srv.maxId = 0
-	srv.reqId = 0
-	srv.reservationId = 0
-	srv.groupId = 0
-	srv.vpcId = 0
-	srv.igwId = 0
-	srv.rtbId = 0
-	srv.rtbassocId = 0
-	srv.dhcpOptsId = 0
-	srv.subnetId = 0
-	srv.volumeId = 0
-	srv.ifaceId = 0
-	srv.attachId = 0
+	srv.maxId.reset()
+	srv.reqId.reset()
+	srv.reservationId.reset()
+	srv.groupId.reset()
+	srv.vpcId.reset()
+	srv.igwId.reset()
+	srv.rtbId.reset()
+	srv.rtbassocId.reset()
+	srv.dhcpOptsId.reset()
+	srv.subnetId.reset()
+	srv.volumeId.reset()
+	srv.ifaceId.reset()
+	srv.attachId.reset()
 
 	srv.attributes = make(map[string][]string)
 	srv.instances = make(map[string]*Instance)

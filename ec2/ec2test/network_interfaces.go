@@ -280,11 +280,11 @@ func (srv *Server) createNICsOnRun(instId string, instSubnet *subnet, ifacesToCr
 	var createdNICs []ec2.NetworkInterface
 	for _, ifaceToCreate := range ifacesToCreate {
 		nicId := ifaceToCreate.Id
-		macAddress := fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId)
+		macAddress := fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId.get())
 		if nicId == "" {
 			// Simulate a NIC got created.
 			nicId = fmt.Sprintf("eni-%d", srv.ifaceId.next())
-			macAddress = fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId)
+			macAddress = fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId.get())
 		}
 		groups := make([]ec2.SecurityGroup, len(ifaceToCreate.SecurityGroupIds))
 		for i, sgId := range ifaceToCreate.SecurityGroupIds {
@@ -398,7 +398,7 @@ func (srv *Server) createIFace(w http.ResponseWriter, req *http.Request, reqId s
 		Description:      desc,
 		OwnerId:          ownerId,
 		Status:           "available",
-		MACAddress:       fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId),
+		MACAddress:       fmt.Sprintf("20:%02x:60:cb:27:37", srv.ifaceId.get()),
 		PrivateIPAddress: primaryIP,
 		PrivateDNSName:   srv.dnsNameFromPrivateIP(primaryIP),
 		SourceDestCheck:  true,
