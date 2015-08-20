@@ -19,6 +19,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gopkg.in/amz.v3/ec2"
 )
@@ -115,12 +116,21 @@ func parseInOrder(form url.Values, prefix string) []string {
 	return results
 }
 
-type counter int
+type counter struct {
+	value int32
+}
 
-func (c *counter) next() (i int) {
-	i = int(*c)
-	(*c)++
-	return
+func (c *counter) next() int {
+	i := atomic.AddInt32(&c.value, 1)
+	return int(i - 1)
+}
+
+func (c *counter) get() (i int) {
+	return int(atomic.LoadInt32(&c.value))
+}
+
+func (c *counter) reset() {
+	atomic.StoreInt32(&c.value, 0)
 }
 
 // atoi is like strconv.Atoi but is fatal if the
