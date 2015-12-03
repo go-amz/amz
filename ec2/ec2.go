@@ -267,6 +267,7 @@ type RunInstances struct {
 	DisableAPITermination bool
 	ShutdownBehavior      string
 	PrivateIPAddress      string
+	IAMInstanceProfile    string
 	BlockDeviceMappings   []BlockDeviceMapping
 	NetworkInterfaces     []RunNetworkInterface
 	EBSOptimized          bool
@@ -290,6 +291,7 @@ type Instance struct {
 	InstanceId          string                       `xml:"instanceId"`
 	InstanceType        string                       `xml:"instanceType"`
 	ImageId             string                       `xml:"imageId"`
+	IAMInstanceProfile  string                       `xml:"iamInstanceProfile>id"`
 	PrivateDNSName      string                       `xml:"privateDnsName"`
 	DNSName             string                       `xml:"dnsName"`
 	IPAddress           string                       `xml:"ipAddress"`
@@ -402,6 +404,9 @@ func (ec2 *EC2) RunInstances(options *RunInstances) (resp *RunInstancesResp, err
 	}
 	if options.PrivateIPAddress != "" {
 		params["PrivateIpAddress"] = options.PrivateIPAddress
+	}
+	if options.IAMInstanceProfile != "" {
+		params["IamInstanceProfile.Name"] = options.IAMInstanceProfile
 	}
 	if options.EBSOptimized {
 		params["EbsOptimized"] = "true"
