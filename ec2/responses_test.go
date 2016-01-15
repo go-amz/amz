@@ -122,6 +122,10 @@ var RunInstancesExample = `
           </privateIpAddressesSet>
         </item>
       </networkInterfaceSet>
+      <iamInstanceProfile>
+          <arn>arn:aws:iam::012345678912:instance-profile/my-iam-role</arn>
+          <id>AB6DE5GHIJ4LMNOP2RSTU</id>
+      </iamInstanceProfile>
     </item>
     <item>
       <instanceId>i-2bc64242</instanceId>
