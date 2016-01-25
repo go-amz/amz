@@ -51,7 +51,7 @@ var USEast = Region{
 }
 
 var USWest = Region{
-	"us-west-1", //US West (N. California)
+	"us-west-1", // US West (N. California)
 	"https://ec2.us-west-1.amazonaws.com",
 	"https://s3-us-west-1.amazonaws.com",
 	"",
@@ -129,7 +129,7 @@ var APSoutheast = Region{
 }
 
 var APSoutheast2 = Region{
-	"ap-southeast-2", //Asia Pacific (Sydney)
+	"ap-southeast-2", // Asia Pacific (Sydney)
 	"https://ec2.ap-southeast-2.amazonaws.com",
 	"https://s3-ap-southeast-2.amazonaws.com",
 	"",
@@ -142,7 +142,7 @@ var APSoutheast2 = Region{
 }
 
 var APNortheast = Region{
-	"ap-northeast-1", //Asia Pacific (Tokyo)
+	"ap-northeast-1", // Asia Pacific (Tokyo)
 	"https://ec2.ap-northeast-1.amazonaws.com",
 	"https://s3-ap-northeast-1.amazonaws.com",
 	"",
@@ -151,6 +151,19 @@ var APNortheast = Region{
 	"https://sdb.ap-northeast-1.amazonaws.com",
 	"https://sns.ap-northeast-1.amazonaws.com",
 	"https://sqs.ap-northeast-1.amazonaws.com",
+	"https://iam.amazonaws.com",
+}
+
+var APNortheast2 = Region{
+	"ap-northeast-2", // Asia Pacific (Seoul)
+	"https://ec2.ap-northeast-2.amazonaws.com",
+	"https://s3-ap-northeast-2.amazonaws.com",
+	"",
+	true,
+	true,
+	"",
+	"https://sns.ap-northeast-2.amazonaws.com",
+	"https://sqs.ap-northeast-2.amazonaws.com",
 	"https://iam.amazonaws.com",
 }
 
@@ -182,6 +195,7 @@ var CNNorth = Region{
 
 var Regions = map[string]Region{
 	APNortheast.Name:  APNortheast,
+	APNortheast2.Name: APNortheast2,
 	APSoutheast.Name:  APSoutheast,
 	APSoutheast2.Name: APSoutheast2,
 	EUWest.Name:       EUWest,
