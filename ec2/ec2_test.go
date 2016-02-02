@@ -98,6 +98,7 @@ func (s *S) TestRunInstancesExample(c *C) {
 		DisableAPITermination: true,
 		ShutdownBehavior:      "terminate",
 		PrivateIPAddress:      "10.0.0.25",
+		IAMInstanceProfile:    "my-iam-role",
 		BlockDeviceMappings: []ec2.BlockDeviceMapping{{
 			DeviceName:          "device-name",
 			VirtualName:         "virtual-name",
@@ -153,6 +154,7 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(req.Form["DisableApiTermination"], DeepEquals, []string{"true"})
 	c.Assert(req.Form["InstanceInitiatedShutdownBehavior"], DeepEquals, []string{"terminate"})
 	c.Assert(req.Form["PrivateIpAddress"], DeepEquals, []string{"10.0.0.25"})
+	c.Assert(req.Form["IamInstanceProfile.Name"], DeepEquals, []string{"my-iam-role"})
 	c.Assert(req.Form["BlockDeviceMapping.1.DeviceName"], DeepEquals, []string{"device-name"})
 	c.Assert(req.Form["BlockDeviceMapping.1.VirtualName"], DeepEquals, []string{"virtual-name"})
 	c.Assert(req.Form["BlockDeviceMapping.1.Ebs.SnapshotId"], DeepEquals, []string{"snapshot-id"})
@@ -187,6 +189,7 @@ func (s *S) TestRunInstancesExample(c *C) {
 	c.Assert(i0.InstanceType, Equals, "m1.small")
 	c.Assert(i0.ImageId, Equals, "ami-60a54009")
 	c.Assert(i0.Monitoring, Equals, "enabled")
+	c.Assert(i0.IAMInstanceProfile, Equals, "AB6DE5GHIJ4LMNOP2RSTU")
 	c.Assert(i0.KeyName, Equals, "example-key-name")
 	c.Assert(i0.AMILaunchIndex, Equals, 0)
 	c.Assert(i0.VirtType, Equals, "paravirtual")
