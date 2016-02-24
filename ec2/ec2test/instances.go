@@ -158,6 +158,15 @@ func (inst *Instance) ec2instance() ec2.Instance {
 }
 
 func (inst *Instance) matchAttr(attr, value string) (ok bool, err error) {
+	if strings.HasPrefix(attr, "tag:") && len(attr) > 4 {
+		filterTag := attr[4:]
+		for _, t := range inst.tags {
+			if filterTag == t.Key && t.Value == value {
+				return true, nil
+			}
+		}
+		return false, nil
+	}
 	switch attr {
 	case "architecture":
 		return value == "i386", nil
