@@ -33,6 +33,7 @@ type securityGroup struct {
 	vpcId       string
 
 	perms map[permKey]bool
+	tags  []ec2.Tag
 }
 
 // securityGroupInfo is almost the same as ec2.SecurityGroupInfo, but
@@ -130,6 +131,10 @@ func (g *securityGroup) matchAttr(attr, value string) (ok bool, err error) {
 		return value == ownerId, nil
 	case "vpc-id":
 		return g.vpcId == value, nil
+	}
+	if strings.HasPrefix(attr, "tag:") {
+		key := attr[len("tag:"):]
+		return matchTag(g.tags, key, value), nil
 	}
 	return false, fmt.Errorf("unknown attribute %q", attr)
 }
