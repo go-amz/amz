@@ -98,6 +98,10 @@ func (srv *Server) tags(id string) *[]ec2.Tag {
 		if inst, ok := srv.instances[id]; ok {
 			return &inst.tags
 		}
+	case "sg":
+		if group, ok := srv.groups[id]; ok {
+			return &group.tags
+		}
 	case "vol":
 		if vol, ok := srv.volumes[id]; ok {
 			return &vol.Tags

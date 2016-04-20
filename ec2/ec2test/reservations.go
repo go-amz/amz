@@ -32,7 +32,14 @@ func (srv *Server) newReservation(groups []*securityGroup) *reservation {
 
 func (r *reservation) hasRunningMachine() bool {
 	for _, inst := range r.instances {
-		if inst.state.Code != ShuttingDown.Code && inst.state.Code != Terminated.Code {
+		if inst.state == ShuttingDown {
+			// The instance is shutting down: tell the client that
+			// it's still running, but transition it to terminated
+			// so another query will not find it running.
+			inst.state = Terminated
+			return true
+		}
+		if inst.state != Terminated {
 			return true
 		}
 	}
