@@ -434,7 +434,7 @@ func (b *Bucket) SignedURL(path string, expires time.Duration) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Add("date", time.Now().Format(aws.ISO8601BasicFormat))
+	req.Header.Add("date", time.Now().UTC().Format(aws.ISO8601BasicFormat))
 
 	if err := aws.SignV4URL(req, b.Auth, b.Region.Name, "s3", expires); err != nil {
 		return "", err
