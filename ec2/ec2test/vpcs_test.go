@@ -227,6 +227,31 @@ func (s *S) TestAddDefaultVPCAndSubnetsFailsWhenSetAccountAttributesFails(c *C) 
 	s.assertOnlyZonesRemain(c)
 }
 
+func (s *S) TestVPCsIsDefaultFilter(c *C) {
+	s.resetAllButZones(c)
+	s.srv.AddVPC(ec2.VPC{
+		State:           "insane",
+		CIDRBlock:       "0.1.2.0/24",
+		IsDefault:       false,
+		InstanceTenancy: "foo",
+	})
+	vpc1 := s.srv.AddVPC(ec2.VPC{
+		State:           "insane",
+		CIDRBlock:       "0.2.4.0/24",
+		IsDefault:       true,
+		InstanceTenancy: "foo",
+	})
+
+	filter := ec2.NewFilter()
+	filter.Add("isDefault", "true")
+	resp, err := s.ec2.VPCs(nil, filter)
+	c.Assert(err, IsNil)
+	c.Assert(resp, NotNil)
+	c.Assert(resp.VPCs, HasLen, 1)
+	c.Assert(resp.VPCs[0].IsDefault, Equals, true)
+	c.Assert(resp.VPCs[0].Id, Equals, vpc1.Id)
+}
+
 // patchValue sets the value pointed to by the given destination to
 // the given value, and returns a function to restore it to its
 // original value. The value must be assignable to the element type of

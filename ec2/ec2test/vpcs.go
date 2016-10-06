@@ -198,7 +198,9 @@ func (v *vpc) matchAttr(attr, value string) (ok bool, err error) {
 		return v.State == value, nil
 	case "vpc-id":
 		return v.Id == value, nil
-	case "tag", "tag-key", "tag-value", "dhcp-options-id", "isDefault":
+	case "isDefault":
+		return v.IsDefault == (value == "true"), nil
+	case "tag", "tag-key", "tag-value", "dhcp-options-id":
 		return false, fmt.Errorf("%q filter is not implemented", attr)
 	}
 	return false, fmt.Errorf("unknown attribute %q", attr)
