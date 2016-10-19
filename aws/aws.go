@@ -115,6 +115,19 @@ var EUCentral = Region{
 	"https://iam.amazonaws.com",
 }
 
+var APSouth = Region{
+	"ap-south-1", // AP (Mumbai)
+	"https://ec2.ap-south-1.amazonaws.com",
+	"https://s3-ap-south-1.amazonaws.com",
+	"",
+	true,
+	true,
+	"https://sdb.ap-south-1.amazonaws.com",
+	"https://sns.ap-south-1.amazonaws.com",
+	"https://sqs.ap-south-1.amazonaws.com",
+	"https://iam.amazonaws.com",
+}
+
 var APSoutheast = Region{
 	"ap-southeast-1", // Asia Pacific (Singapore)
 	"https://ec2.ap-southeast-1.amazonaws.com",
@@ -196,6 +209,7 @@ var CNNorth = Region{
 var Regions = map[string]Region{
 	APNortheast.Name:  APNortheast,
 	APNortheast2.Name: APNortheast2,
+	APSouth.Name:      APSouth,
 	APSoutheast.Name:  APSoutheast,
 	APSoutheast2.Name: APSoutheast2,
 	EUWest.Name:       EUWest,
