@@ -50,6 +50,19 @@ var USEast = Region{
 	"https://iam.amazonaws.com",
 }
 
+var USEast2 = Region{
+	"us-east-2", // US East (Ohio)
+	"https://ec2.us-east-2.amazonaws.com",
+	"https://s3.us-east-2.amazonaws.com",
+	"",
+	true,
+	true,
+	"",
+	"https://sns.us-east-2.amazonaws.com",
+	"https://sqs.us-east-2.amazonaws.com",
+	"https://iam.amazonaws.com",
+}
+
 var USWest = Region{
 	"us-west-1", // US West (N. California)
 	"https://ec2.us-west-1.amazonaws.com",
@@ -122,7 +135,7 @@ var APSouth = Region{
 	"",
 	true,
 	true,
-	"https://sdb.ap-south-1.amazonaws.com",
+	"",
 	"https://sns.ap-south-1.amazonaws.com",
 	"https://sqs.ap-south-1.amazonaws.com",
 	"https://iam.amazonaws.com",
@@ -215,6 +228,7 @@ var Regions = map[string]Region{
 	EUWest.Name:       EUWest,
 	EUCentral.Name:    EUCentral,
 	USEast.Name:       USEast,
+	USEast2.Name:      USEast2,
 	USWest.Name:       USWest,
 	USWest2.Name:      USWest2,
 	USGovWest.Name:    USGovWest,
