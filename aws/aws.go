@@ -18,13 +18,13 @@ import (
 //
 // See http://goo.gl/d8BP1 for more details.
 type Region struct {
-	Name                 string // the canonical name of this region.
+	Name                 string // The canonical name of this region.
 	EC2Endpoint          string
 	S3Endpoint           string
 	S3BucketEndpoint     string // Not needed by AWS S3. Use ${bucket} for bucket name.
 	S3LocationConstraint bool   // true if this region requires a LocationConstraint declaration.
 	S3LowercaseBucket    bool   // true if the region requires bucket names to be lower case.
-	SDBEndpoint          string // not all regions have simpleDB, fro eg. Frankfurt (eu-central-1) does not
+	SDBEndpoint          string // Not all regions have simpleDB, e.g. Frankfurt (eu-central-1) does not.
 	SNSEndpoint          string
 	SQSEndpoint          string
 	IAMEndpoint          string
@@ -102,6 +102,19 @@ var USGovWest = Region{
 	"https://iam.us-gov.amazonaws.com",
 }
 
+var CACentral = Region{
+	"ca-central-1", // CA (Central)
+	"https://ec2.ca-central-1.amazonaws.com",
+	"https://s3-ca-central-1.amazonaws.com",
+	"",
+	true,
+	true,
+	"",
+	"https://sns.ca-central-1.amazonaws.com",
+	"https://sqs.ca-central-1.amazonaws.com",
+	"https://iam.amazonaws.com",
+}
+
 var EUWest = Region{
 	"eu-west-1", // EU (Ireland)
 	"https://ec2.eu-west-1.amazonaws.com",
@@ -112,6 +125,19 @@ var EUWest = Region{
 	"https://sdb.eu-west-1.amazonaws.com",
 	"https://sns.eu-west-1.amazonaws.com",
 	"https://sqs.eu-west-1.amazonaws.com",
+	"https://iam.amazonaws.com",
+}
+
+var EUWest2 = Region{
+	"eu-west-2", // EU (London)
+	"https://ec2.eu-west-2.amazonaws.com",
+	"https://s3-eu-west-2.amazonaws.com",
+	"",
+	true,
+	true,
+	"",
+	"https://sns.eu-west-2.amazonaws.com",
+	"https://sqs.eu-west-2.amazonaws.com",
 	"https://iam.amazonaws.com",
 }
 
@@ -226,6 +252,7 @@ var Regions = map[string]Region{
 	APSoutheast.Name:  APSoutheast,
 	APSoutheast2.Name: APSoutheast2,
 	EUWest.Name:       EUWest,
+	EUWest2.Name:      EUWest2,
 	EUCentral.Name:    EUCentral,
 	USEast.Name:       USEast,
 	USEast2.Name:      USEast2,
@@ -234,6 +261,7 @@ var Regions = map[string]Region{
 	USGovWest.Name:    USGovWest,
 	SAEast.Name:       SAEast,
 	CNNorth.Name:      CNNorth,
+	CACentral.Name:    CACentral,
 }
 
 type Auth struct {
