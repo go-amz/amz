@@ -422,7 +422,8 @@ func requestTime(req *http.Request) (time.Time, error) {
 
 	// Start attempting to parse
 	for _, format := range timeFormats {
-		if parsedTime, err := time.Parse(format, date); err == nil {
+		// Use ParseInLocation to avoid tz mis-calculations, as seen with DST.
+		if parsedTime, err := time.ParseInLocation(format, date, time.FixedZone("UTC", 0)); err == nil {
 			return parsedTime, nil
 		}
 	}
