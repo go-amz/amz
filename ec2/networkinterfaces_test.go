@@ -154,7 +154,15 @@ func (s *S) TestNetworkInterfacesExample(c *C) {
 		DeleteOnTermination: true,
 	})
 	c.Check(iface.PrivateIPs, DeepEquals, []ec2.PrivateIP{
-		{Address: "10.0.1.233", IsPrimary: true},
+		{
+			Address:   "10.0.1.233",
+			IsPrimary: true,
+			Association: ec2.IPAssociation{
+				PublicIP:      "52.71.251.91",
+				PublicDNSName: "ec2-52-71-251-91.compute-1.amazonaws.com",
+				IPOwnerId:     "amazon",
+			},
+		},
 		{Address: "10.0.1.20", IsPrimary: false},
 	})
 	c.Check(iface.Tags, HasLen, 0)
