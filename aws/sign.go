@@ -18,7 +18,8 @@ import (
 
 var debug = log.New(
 	// Remove the c-style comment header to front of line to debug information.
-	/*os.Stdout, //*/ ioutil.Discard,
+	/*os.Stdout, //*/
+	ioutil.Discard,
 	"DEBUG: ",
 	log.LstdFlags,
 )
