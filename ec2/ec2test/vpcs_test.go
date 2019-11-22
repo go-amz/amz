@@ -11,6 +11,7 @@ package ec2test_test
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"testing"
 
 	. "gopkg.in/check.v1"
@@ -70,6 +71,9 @@ func (s *S) TestAddVPC(c *C) {
 	c.Assert(err, IsNil)
 	c.Assert(resp, NotNil)
 	c.Assert(resp.VPCs, HasLen, 2) // default and the one just added.
+	sort.Slice(resp.VPCs, func(l, r int) bool {
+		return resp.VPCs[l].CIDRBlock > resp.VPCs[r].CIDRBlock
+	})
 	c.Assert(resp.VPCs[0].IsDefault, Equals, true)
 	c.Assert(resp.VPCs[1], DeepEquals, added)
 }

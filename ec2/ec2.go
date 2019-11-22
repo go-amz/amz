@@ -32,7 +32,7 @@ const (
 	debug = false
 
 	// apiVersion is the AWS API version used for all EC2 requests.
-	apiVersion = "2014-10-01"
+	apiVersion = "2015-03-01"
 )
 
 // The EC2 type encapsulates operations with a specific EC2 region.

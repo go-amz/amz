@@ -27,13 +27,22 @@ type NetworkInterfaceAttachment struct {
 	DeleteOnTermination bool   `xml:"deleteOnTermination"`
 }
 
+// IPAssociation describes association information for an Elastic IP address.
+// See http://goo.gl/YCDdMe for more details
+type IPAssociation struct {
+	PublicIP      string `xml:"publicIp"`
+	PublicDNSName string `xml:"publicDnsName"`
+	IPOwnerId     string `xml:"ipOwnerId"`
+}
+
 // PrivateIP describes a private IP address of a network interface.
 //
 // See http://goo.gl/jtuQEJ for more details.
 type PrivateIP struct {
-	Address   string `xml:"privateIpAddress"`
-	DNSName   string `xml:"privateDnsName"`
-	IsPrimary bool   `xml:"primary"`
+	Address     string        `xml:"privateIpAddress"`
+	DNSName     string        `xml:"privateDnsName"`
+	IsPrimary   bool          `xml:"primary"`
+	Association IPAssociation `xml:"association"`
 }
 
 // NetworkInterface describes a network interface for VPC.

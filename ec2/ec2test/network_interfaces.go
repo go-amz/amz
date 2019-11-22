@@ -255,8 +255,9 @@ func (srv *Server) addDefaultNIC(instSubnet *subnet) []ec2.RunNetworkInterface {
 	if !ipnet.Contains(ip) {
 		panic(fmt.Sprintf("%q does not contain IP %q", instSubnet.Id, ip))
 	}
+	ifID := srv.ifaceId.next()
 	return []ec2.RunNetworkInterface{{
-		Id:                  fmt.Sprintf("eni-%d", srv.ifaceId.next()),
+		Id:                  fmt.Sprintf("eni-%d", ifID),
 		DeviceIndex:         0,
 		Description:         "created by ec2test server",
 		DeleteOnTermination: true,
@@ -264,6 +265,12 @@ func (srv *Server) addDefaultNIC(instSubnet *subnet) []ec2.RunNetworkInterface {
 			Address:   ip.String(),
 			DNSName:   srv.dnsNameFromPrivateIP(ip.String()),
 			IsPrimary: true,
+			// Assign a public shadow IP
+			Association: ec2.IPAssociation{
+				PublicIP:      fmt.Sprintf("73.37.0.%d", ifID+1),
+				PublicDNSName: fmt.Sprintf("ec2-73-37-0-%d.compute-1.amazonaws.com", ifID+1),
+				IPOwnerId:     "amazon",
+			},
 		}},
 	}}
 }

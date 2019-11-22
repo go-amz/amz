@@ -72,7 +72,7 @@ func (srv *Server) parseVolumeAttachment(req *http.Request) ec2.VolumeAttachment
 			// Check volume id validity.
 			vol = srv.volume(v)
 			if vol.Status != "available" {
-				fatalf(400, " IncorrectState", "cannot attach volume that is not available", v)
+				fatalf(400, " IncorrectState", "cannot attach volume that is not available: %v", v)
 			}
 			attachment.VolumeId = v
 		case "InstanceId":

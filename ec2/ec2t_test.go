@@ -5,6 +5,8 @@ import (
 	"net"
 	"regexp"
 	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	. "gopkg.in/check.v1"
@@ -410,12 +412,21 @@ func (s *ServerTests) testCreateDefaultNIC(c *C, subnet *ec2.Subnet) {
 	c.Assert(iface.Id, Matches, "eni-.+")
 	c.Assert(iface.SubnetId, Equals, subnet.Id)
 	c.Assert(iface.VPCId, Equals, subnet.VPCId)
+
+	ifaceID, err := strconv.ParseInt(strings.TrimPrefix(iface.Id, "eni-"), 10, 64)
+	c.Assert(err, IsNil)
+
 	if len(iface.PrivateIPs) > 0 {
 		// AWS doesn't always fill in the PrivateIPs slice.
 		expectIP := ec2.PrivateIP{
 			Address:   iface.PrivateIPAddress,
 			DNSName:   iface.PrivateDNSName,
 			IsPrimary: true,
+			Association: ec2.IPAssociation{
+				PublicIP:      fmt.Sprintf("73.37.0.%d", ifaceID+1),
+				PublicDNSName: fmt.Sprintf("ec2-73-37-0-%d.compute-1.amazonaws.com", ifaceID+1),
+				IPOwnerId:     "amazon",
+			},
 		}
 		c.Assert(iface.PrivateIPs, DeepEquals, []ec2.PrivateIP{expectIP})
 	}

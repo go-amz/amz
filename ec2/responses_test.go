@@ -953,6 +953,11 @@ var DescribeNetworkInterfacesExample = `
            <item>
              <privateIpAddress>10.0.1.233</privateIpAddress>
              <primary>true</primary>
+             <association>
+               <ipOwnerId>amazon</ipOwnerId>
+               <publicDnsName>ec2-52-71-251-91.compute-1.amazonaws.com</publicDnsName>
+               <publicIp>52.71.251.91</publicIp>
+             </association>
            </item>
            <item>
              <privateIpAddress>10.0.1.20</privateIpAddress>
