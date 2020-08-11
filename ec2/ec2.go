@@ -127,8 +127,46 @@ type xmlErrors struct {
 
 var timeNow = time.Now
 
-// resp = response structure that will get inflated by XML unmarshaling.
+// query performs a query with backoff if a rate limit error is received.
 func (ec2 *EC2) query(params map[string]string, resp interface{}) error {
+	const maxAttempts = 10
+
+	var err error
+	delay := time.Second
+	for i := 1; i <= maxAttempts; i++ {
+		if debug && i > 1 {
+			log.Printf("attempt %d running query with params %v after error: %v\n", i+1, params, err)
+		}
+		err = ec2.query_(params, resp)
+		if err == nil {
+			return nil
+		}
+		ec2err, ok := err.(*Error)
+		if !ok || ec2err.Code != "RequestLimitExceeded" {
+			return err
+		}
+		// Exit immediately once we hit the retry limit.
+		if i == maxAttempts {
+			break
+		}
+		// Double the backoff delay each time.
+		if i > 1 {
+			delay = delay * 2
+		}
+		// Max 1 minute is enough time to wait.
+		if delay > time.Minute {
+			delay = time.Minute
+		}
+		// Wait for the delay, and retry
+		select {
+		case <-time.After(delay):
+		}
+	}
+	return fmt.Errorf("attempt count exceeded: %v", err)
+}
+
+// resp = response structure that will get inflated by XML unmarshaling.
+func (ec2 *EC2) query_(params map[string]string, resp interface{}) error {
 
 	req, err := http.NewRequest("GET", ec2.Region.EC2Endpoint, nil)
 	if err != nil {

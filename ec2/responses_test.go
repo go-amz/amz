@@ -13,6 +13,19 @@ var ErrorDump = `
 </Response>
 `
 
+var ErrorRequestLimitExceeded = `
+<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+   <Errors>
+      <Error>
+         <Code>RequestLimitExceeded</Code>
+         <Message>Request limit exceeded</Message>
+      </Error>
+   </Errors>
+   <RequestID>0503f4e9-bbd6-483c-b54f-c4ae9f3b30f4</RequestID>
+</Response>
+`
+
 // http://goo.gl/Mcm3b
 var RunInstancesExample = `
 <RunInstancesResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">

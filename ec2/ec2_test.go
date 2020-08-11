@@ -61,6 +61,26 @@ func (s *S) TestRunInstancesErrorDump(c *C) {
 	c.Assert(ec2err.RequestId, Equals, "0503f4e9-bbd6-483c-b54f-c4ae9f3b30f4")
 }
 
+func (s *S) TestRequestLimitExceededRetry(c *C) {
+	testServer.Response(503, nil, ErrorRequestLimitExceeded)
+	testServer.Response(200, nil, RunInstancesExample)
+
+	options := ec2.RunInstances{
+		ImageId:      "ami-a6f504cf", // Ubuntu Maverick, i386, instance store
+		InstanceType: "t1.micro",     // Doesn't work with micro, results in 400.
+	}
+
+	resp, err := s.ec2.RunInstances(&options)
+	// Request sent twice, 1 retry.
+	testServer.WaitRequests(2)
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
+	c.Assert(resp.ReservationId, Equals, "r-47a5402e")
+	c.Assert(resp.OwnerId, Equals, "999988887777")
+	c.Assert(resp.SecurityGroups, DeepEquals, []ec2.SecurityGroup{{Name: "default", Id: "sg-67ad940e"}})
+}
+
 func (s *S) TestRunInstancesErrorWithoutXML(c *C) {
 	testServer.Response(500, nil, "")
 	options := ec2.RunInstances{ImageId: "image-id"}
