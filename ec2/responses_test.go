@@ -605,6 +605,45 @@ var DescribeSecurityGroupsDump = `
 </DescribeSecurityGroupsResponse>
 `
 
+// A dump which includes groups within ip permissions and a mix of IPV4 and IPV6 CIDRs.
+var DescribeSecurityGroupsDumpWithIPV6 = `
+<?xml version="1.0" encoding="UTF-8"?>
+<DescribeSecurityGroupsResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
+    <requestId>87b92b57-cc6e-48b2-943f-f6f0e5c9f46c</requestId>
+    <securityGroupInfo>
+        <item>
+            <ownerId>12345</ownerId>
+            <groupName>default</groupName>
+            <groupDescription>default group</groupDescription>
+            <ipPermissions>
+                <item>
+                    <ipProtocol>icmp</ipProtocol>
+                    <fromPort>-1</fromPort>
+                    <toPort>-1</toPort>
+                    <groups>
+                        <item>
+                            <userId>12345</userId>
+                            <groupName>default</groupName>
+                            <groupId>sg-67ad940e</groupId>
+                        </item>
+                    </groups>
+		    <ipRanges>
+                        <item>
+                            <cidrIp>10.0.0.0/24</cidrIp>
+                        </item>
+                    </ipRanges>
+                    <ipv6Ranges>
+                        <item>
+                            <cidrIpv6>2002::1234:abcd:ffff:c0a8:101/64</cidrIpv6>
+                        </item>
+                    </ipv6Ranges>
+                </item>
+            </ipPermissions>
+        </item>
+    </securityGroupInfo>
+</DescribeSecurityGroupsResponse>
+`
+
 // http://goo.gl/QJJDO
 var DeleteSecurityGroupExample = `
 <DeleteSecurityGroupResponse xmlns="http://ec2.amazonaws.com/doc/2014-10-01/">
