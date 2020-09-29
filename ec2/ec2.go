@@ -880,11 +880,12 @@ type SecurityGroupInfo struct {
 //
 // See http://goo.gl/4oTxv for more details.
 type IPPerm struct {
-	Protocol     string              `xml:"ipProtocol"`
-	FromPort     int                 `xml:"fromPort"`
-	ToPort       int                 `xml:"toPort"`
-	SourceIPs    []string            `xml:"ipRanges>item>cidrIp"`
-	SourceGroups []UserSecurityGroup `xml:"groups>item"`
+	Protocol      string              `xml:"ipProtocol"`
+	FromPort      int                 `xml:"fromPort"`
+	ToPort        int                 `xml:"toPort"`
+	SourceIPs     []string            `xml:"ipRanges>item>cidrIp"`
+	SourceIPV6IPs []string            `xml:"ipv6Ranges>item>cidrIpv6"`
+	SourceGroups  []UserSecurityGroup `xml:"groups>item"`
 }
 
 // UserSecurityGroup holds a security group and the owner
