@@ -32,7 +32,7 @@ const (
 	debug = false
 
 	// apiVersion is the AWS API version used for all EC2 requests.
-	apiVersion = "2015-03-01"
+	apiVersion = "2016-11-15"
 )
 
 // The EC2 type encapsulates operations with a specific EC2 region.
@@ -880,11 +880,12 @@ type SecurityGroupInfo struct {
 //
 // See http://goo.gl/4oTxv for more details.
 type IPPerm struct {
-	Protocol     string              `xml:"ipProtocol"`
-	FromPort     int                 `xml:"fromPort"`
-	ToPort       int                 `xml:"toPort"`
-	SourceIPs    []string            `xml:"ipRanges>item>cidrIp"`
-	SourceGroups []UserSecurityGroup `xml:"groups>item"`
+	Protocol      string              `xml:"ipProtocol"`
+	FromPort      int                 `xml:"fromPort"`
+	ToPort        int                 `xml:"toPort"`
+	SourceIPs     []string            `xml:"ipRanges>item>cidrIp"`
+	SourceIPV6IPs []string            `xml:"ipv6Ranges>item>cidrIpv6"`
+	SourceGroups  []UserSecurityGroup `xml:"groups>item"`
 }
 
 // UserSecurityGroup holds a security group and the owner
@@ -999,6 +1000,10 @@ func (ec2 *EC2) authOrRevoke(op string, group SecurityGroup, perms []IPPerm) (re
 		params[prefix+".ToPort"] = strconv.Itoa(perm.ToPort)
 		for j, ip := range perm.SourceIPs {
 			params[prefix+".IpRanges."+strconv.Itoa(j+1)+".CidrIp"] = ip
+		}
+		for j, ip := range perm.SourceIPV6IPs {
+			params[prefix+".Ipv6Ranges."+strconv.Itoa(j+1)+".CidrIpv6"] = ip
+			j++
 		}
 		for j, g := range perm.SourceGroups {
 			subprefix := prefix + ".Groups." + strconv.Itoa(j+1)

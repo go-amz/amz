@@ -629,6 +629,27 @@ func (s *S) TestDescribeSecurityGroupsDumpWithGroup(c *C) {
 	c.Check(ipp1.SourceGroups[0].Name, Equals, "other")
 }
 
+func (s *S) TestDescribeSecurityGroupsDumpWithIPV6CIDRs(c *C) {
+	testServer.Response(200, nil, DescribeSecurityGroupsDumpWithIPV6)
+
+	resp, err := s.ec2.SecurityGroups(nil, nil)
+
+	req := testServer.WaitRequest()
+	c.Assert(req.Form["Action"], DeepEquals, []string{"DescribeSecurityGroups"})
+	c.Assert(err, IsNil)
+	c.Check(resp.Groups, HasLen, 1)
+	c.Check(resp.Groups[0].IPPerms, HasLen, 1)
+
+	ipp0 := resp.Groups[0].IPPerms[0]
+	c.Check(ipp0.Protocol, Equals, "icmp")
+	c.Assert(ipp0.SourceGroups, HasLen, 1)
+	c.Check(ipp0.SourceGroups[0].OwnerId, Equals, "12345")
+	c.Check(ipp0.SourceGroups[0].Name, Equals, "default")
+	c.Check(ipp0.SourceGroups[0].Id, Equals, "sg-67ad940e")
+	c.Check(ipp0.SourceIPs, DeepEquals, []string{"10.0.0.0/24"})
+	c.Check(ipp0.SourceIPV6IPs, DeepEquals, []string{"2002::1234:abcd:ffff:c0a8:101/64"})
+}
+
 func (s *S) TestDeleteSecurityGroupExample(c *C) {
 	testServer.Response(200, nil, DeleteSecurityGroupExample)
 
@@ -722,6 +743,33 @@ func (s *S) TestAuthorizeSecurityGroupExample2(c *C) {
 	c.Assert(req.Form["IpPermissions.1.Groups.2.UserId"], IsNil)
 	c.Assert(req.Form["IpPermissions.1.Groups.2.GroupName"], IsNil)
 	c.Assert(req.Form["IpPermissions.1.Groups.2.GroupId"], DeepEquals, []string{"sg-67ad940e"})
+
+	c.Assert(err, IsNil)
+	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
+}
+
+func (s *S) TestAuthorizeSecurityGroupWithIPV6CIDRs(c *C) {
+	testServer.Response(200, nil, AuthorizeSecurityGroupIngressExample)
+
+	perms := []ec2.IPPerm{{
+		Protocol:      "tcp",
+		FromPort:      80,
+		ToPort:        81,
+		SourceIPs:     []string{"10.0.0.0/24"},
+		SourceIPV6IPs: []string{"2002::1234:abcd:ffff:c0a8:101/64"},
+	}}
+	resp, err := s.ec2.AuthorizeSecurityGroup(ec2.SecurityGroup{Name: "websrv"}, perms)
+
+	req := testServer.WaitRequest()
+
+	c.Assert(req.Form["Action"], DeepEquals, []string{"AuthorizeSecurityGroupIngress"})
+	c.Assert(req.Form["GroupName"], DeepEquals, []string{"websrv"})
+
+	c.Assert(req.Form["IpPermissions.1.IpProtocol"], DeepEquals, []string{"tcp"})
+	c.Assert(req.Form["IpPermissions.1.FromPort"], DeepEquals, []string{"80"})
+	c.Assert(req.Form["IpPermissions.1.ToPort"], DeepEquals, []string{"81"})
+	c.Assert(req.Form["IpPermissions.1.IpRanges.1.CidrIp"], DeepEquals, []string{"10.0.0.0/24"})
+	c.Assert(req.Form["IpPermissions.1.Ipv6Ranges.1.CidrIpv6"], DeepEquals, []string{"2002::1234:abcd:ffff:c0a8:101/64"})
 
 	c.Assert(err, IsNil)
 	c.Assert(resp.RequestId, Equals, "59dbff89-35bd-4eac-99ed-be587EXAMPLE")
